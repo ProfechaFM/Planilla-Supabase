@@ -543,10 +543,9 @@ function pResultado(R){
       </div>
       ${R.alerta&&R.alerta.activa?`<div class="alert">Faltan ${money(R.alerta.monto)}.<br>
         Revisá el cierre con un administrador.</div>`:""}
-      ${R.fondoBajo&&R.fondoBajo.activa?`<div style="background:var(--warn-bg);border:1px solid var(--warn-line);
+      ${R.discrepancia&&R.discrepancia.activa?`<div style="background:var(--warn-bg);border:1px solid var(--warn-line);
         color:var(--warn-ink);border-radius:8px;padding:10px;text-align:center;font-weight:600;margin:0 0 12px">
-        La caja quedó con poco efectivo para dar vuelto.<br>Avisá a un administrador para reponer.
-        ${C.modoAdmin&&R.detalle?` (faltan ${money(R.detalle.faltaFondo)})`:""}</div>`:""}
+        No se pudo completar el depósito. Avisá a un administrador para revisar el cierre.</div>`:""}
       ${bloqueAdmin}
       <div class="big">Entregar: ${money(totE)}${C.dolares>0?` + $${C.dolares}`:""}</div>
       <div class="tablas">
