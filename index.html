@@ -280,9 +280,18 @@ function renderPaso(){
 }
 function navBar(onNext,label="Continuar",canNext=true){
   nav.classList.remove("hidden");
-  nav.innerHTML = `${paso>0?`<button class="btn-ghost" id="nv-b">Atrás</button>`:""}
+  // En modo admin, el primer paso permite volver al panel; si no, "Atrás" normal.
+  const volver = (paso===0 && C.modoAdmin)
+    ? `<button class="btn-ghost" id="nv-b">Volver al panel</button>`
+    : (paso>0 ? `<button class="btn-ghost" id="nv-b">Atrás</button>` : "");
+  nav.innerHTML = `${volver}
                    <button class="btn-primary" id="nv-n" ${canNext?"":"disabled"}>${label}</button>`;
-  const b=$("#nv-b"); if(b) b.onclick=()=>{ if(paso-1===2) sub=SUBS.length-1; irA(paso-1); };
+  const b=$("#nv-b");
+  if(b) b.onclick=()=>{
+    if(paso===0 && C.modoAdmin){ C.modoAdmin=false; adminHome(); return; }
+    if(paso-1===2) sub=SUBS.length-1;
+    irA(paso-1);
+  };
   $("#nv-n").onclick=onNext;
 }
 
