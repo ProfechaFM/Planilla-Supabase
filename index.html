@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-07
+  Armado el 2026-10-08
 -->
 <html lang="es">
 <head>
@@ -234,6 +234,35 @@ tbody tr:hover td{background:var(--bg)}
           color:var(--accent);font-weight:600;line-height:1.4}
 .sal-tasa span{display:block;color:var(--text3);font-weight:400;font-size:10px}
 
+/* ── Tablero de inicio ───────────────────────────────────────────── */
+.ini-fila{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
+          gap:1rem;align-items:start;margin-bottom:1rem}
+@media(max-width:1000px){.ini-fila{grid-template-columns:1fr}}
+.delta{font-size:11px}
+.delta.sube{color:var(--warn)} .delta.baja{color:var(--accent)}
+
+.grafs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.4rem}
+@media(max-width:1250px){.grafs{grid-template-columns:1fr}}
+.graf-caja{min-width:0}
+.graf-tit{font-size:12px;font-weight:600}
+.graf-sub{font-size:11px;color:var(--text3);margin-bottom:.3rem;
+          display:flex;gap:10px;flex-wrap:wrap}
+.leyenda{display:inline-flex;align-items:center;gap:4px}
+.leyenda i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.graf{width:100%;height:auto;display:block;overflow:visible}
+.graf .rejilla{stroke:var(--border);stroke-width:1}
+.graf .eje{font-family:'DM Mono',monospace;font-size:9px;fill:var(--text3)}
+.graf .val{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;
+           fill:var(--text2)}
+.graf rect[fill="transparent"]{cursor:default}
+
+.fg-lbl{display:block;font-size:11px;font-weight:600;color:var(--text3);
+        text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.logo-prev{width:110px;height:110px;border:1px dashed var(--border2);
+           border-radius:var(--rs);display:flex;align-items:center;
+           justify-content:center;background:var(--bg);overflow:hidden}
+.logo-prev img{max-width:100%;max-height:100%;object-fit:contain}
+
 </style>
 </head>
 <body>
@@ -317,26 +346,20 @@ tbody tr:hover td{background:var(--bg)}
         <div class="page-sub" id="ini-fecha"></div>
       </div>
 
-      <div class="metrics">
-        <div class="metric">
-          <div class="metric-lbl">Empleados con planilla</div>
-          <div class="metric-val" id="m-empleados">—</div>
-          <div class="metric-sub">en el histórico</div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title" id="ini-semana-cab">Última semana</div>
+        <div class="metrics" id="ini-semana" style="margin:0"></div>
+        <p class="ayuda" id="ini-semana-extra" style="margin-top:.8rem"></p>
+      </div>
+
+      <div class="ini-fila">
+        <div class="card">
+          <div class="card-title">El año</div>
+          <div id="ini-graficos" class="grafs"></div>
         </div>
-        <div class="metric">
-          <div class="metric-lbl">Semanas registradas</div>
-          <div class="metric-val" id="m-semanas">—</div>
-          <div class="metric-sub">migradas de Sheets</div>
-        </div>
-        <div class="metric">
-          <div class="metric-lbl">Bruto acumulado</div>
-          <div class="metric-val" id="m-bruto">—</div>
-          <div class="metric-sub">histórico completo</div>
-        </div>
-        <div class="metric">
-          <div class="metric-lbl">Última semana</div>
-          <div class="metric-val" id="m-ultima" style="font-size:16px">—</div>
-          <div class="metric-sub" id="m-ultima-sub"></div>
+        <div class="card">
+          <div class="card-title" id="ini-mes-cab">El mes</div>
+          <div id="ini-mes"></div>
         </div>
       </div>
 
@@ -355,24 +378,41 @@ tbody tr:hover td{background:var(--bg)}
             <tr><td colspan="6" class="vacio">Cargando…</td></tr>
           </tbody>
         </table></div>
+        <p class="ayuda" id="ini-historico" style="margin-top:.8rem"></p>
       </div>
 
       <div class="card">
-        <div class="card-title">Estado de la migración</div>
-        <div class="alert alert-info" style="margin-bottom:1rem">
-          <span>◷</span>
-          <div>Esta versión corre sobre Supabase y convive con la app anterior.
-          Mientras las dos estén activas, seguí usando la de Sheets para trabajar
-          y esta para comparar.</div>
+        <div class="card-title">Datos de la empresa</div>
+        <p class="ayuda" style="margin-bottom:1rem">
+          Esto sale en los comprobantes, las constancias y la portada.
+        </p>
+        <div class="ini-fila">
+          <div class="form-grid" style="margin:0">
+            <div class="fg"><label>Razón social</label>
+              <input id="emp-razon" placeholder="PROFECHA S.A."></div>
+            <div class="fg"><label>Cédula jurídica</label>
+              <input id="emp-cedula" placeholder="3-101-173484"></div>
+            <div class="fg"><label>Nombre comercial</label>
+              <input id="emp-nombre" placeholder="La Fiesta del Maíz"></div>
+            <div class="fg" style="justify-content:flex-end">
+              <button class="btn btn-p" id="emp-guardar">Guardar</button></div>
+          </div>
+          <div>
+            <label class="fg-lbl">Logo</label>
+            <div class="logo-prev" id="emp-logo-prev"></div>
+            <div class="abar" style="margin-top:.6rem">
+              <label class="btn btn-s" style="cursor:pointer">
+                Subir imagen
+                <input type="file" id="emp-logo" accept="image/*" style="display:none">
+              </label>
+              <button class="btn btn-s" id="emp-logo-quitar">Quitar</button>
+            </div>
+            <p class="ayuda" style="margin-top:.5rem">
+              PNG o JPG, menos de 400 KB. Se guarda dentro de la base, así que
+              los documentos lo llevan adentro y se imprimen sin internet.
+            </p>
+          </div>
         </div>
-        <table>
-          <tr><td>Empleados</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-          <tr><td>Horario semanal</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-          <tr><td>Cálculo de planilla</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-          <tr><td>Historial y aguinaldo</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-          <tr><td>Vacaciones, incapacidades, rebajos</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-          <tr><td>Liquidaciones, 10 % salón y constancias</td><td style="text-align:right"><span class="badge b-ok">listo</span></td></tr>
-        </table>
       </div>
     </section>
 
@@ -442,6 +482,7 @@ tbody tr:hover td{background:var(--bg)}
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-s" id="pl-recalcular">↻ Recalcular</button>
             <button class="btn btn-s" id="pl-comprobantes">🧾 Comprobantes</button>
+            <button class="btn btn-s" id="pl-comprobantes-ccss">Solo CCSS</button>
             <button class="btn btn-p" id="pl-guardar">Guardar planilla</button>
           </div>
         </div>
@@ -499,7 +540,14 @@ tbody tr:hover td{background:var(--bg)}
         <div id="pl-panel-efectivo" style="display:none">
           <div class="tab-wrap"><table>
             <thead><tr><th>ID</th><th>Empleado</th>
-                       <th style="text-align:right">Monto</th><th>Desglose</th></tr></thead>
+                       <th style="text-align:right">Exacto</th>
+                       <th style="text-align:right">Redondeado ±₡500</th>
+                       <th style="text-align:right">₡20 000</th>
+                       <th style="text-align:right">₡10 000</th>
+                       <th style="text-align:right">₡5 000</th>
+                       <th style="text-align:right">₡2 000</th>
+                       <th style="text-align:right">₡1 000</th>
+                       <th style="text-align:right">₡500</th></tr></thead>
             <tbody id="pl-ef-body"></tbody>
             <tfoot id="pl-ef-foot"></tfoot>
           </table></div>
@@ -1223,6 +1271,34 @@ const DB = (() => {
       return data;
     },
 
+    // Acuerdos especiales: días que se pagan distinto por un arreglo
+    // puntual con la persona. Viven aparte del horario porque no son
+    // una corrección de marcas, son una decisión.
+    async acuerdos(desde, hasta){
+      const { data, error } = await cli.from('acuerdos_especiales')
+        .select('*, empleados(nombre, codigo_reloj)')
+        .gte('fecha', desde).lte('fecha', hasta)
+        .order('fecha');
+      if (error) throw error;
+      return data;
+    },
+
+    async guardarAcuerdo({ empleado_id, fecha, modo, nota }){
+      const d = new Date(fecha + 'T12:00:00');
+      const { data, error } = await cli.from('acuerdos_especiales')
+        .upsert({ empleado_id, fecha, modo, nota: nota || null,
+                  dia_semana: (d.getDay() + 6) % 7 },
+                { onConflict:'empleado_id,fecha' })
+        .select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    async borrarAcuerdo(id){
+      const { error } = await cli.from('acuerdos_especiales').delete().eq('id', id);
+      if (error) throw error;
+    },
+
     async feriados(desde, hasta){
       const { data, error } = await cli.from('feriados')
         .select('*').gte('fecha', desde).lte('fecha', hasta);
@@ -1815,39 +1891,6 @@ const App = (() => {
     ir(inicial);
   }
 
-  /* ── Inicio ──────────────────────────────────────────────────── */
-  async function pintarInicio(){
-    const hoy = new Date();
-    $('ini-fecha').textContent = 'Hoy es ' + hoy.toLocaleDateString('es-CR',
-      { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
-
-    try{
-      const r = await DB.resumen();
-      if (r){
-        $('m-empleados').textContent = r.empleados ?? '—';
-        $('m-semanas').textContent   = r.semanas ?? '—';
-        $('m-bruto').textContent     = fmtMon(r.bruto);
-        $('m-ultima').textContent    = r.ultima_semana ? fmtFecha(r.ultima_semana) : '—';
-        $('m-ultima-sub').textContent = r.primera_semana
-          ? 'desde ' + fmtFecha(r.primera_semana) : '';
-      }
-      const meses = await DB.ultimasSemanas(6);
-      $('ini-meses').innerHTML = meses.length
-        ? meses.map(m => `<tr>
-            <td>${esc(m.anio_mes)}</td>
-            <td class="num">${m.semanas}</td>
-            <td class="num">${m.empleados}</td>
-            <td class="num">${fmtMon(m.bruto)}</td>
-            <td class="num" style="color:var(--danger)">${fmtMon(m.ccss)}</td>
-            <td class="num" style="font-weight:600">${fmtMon(m.neto)}</td>
-          </tr>`).join('')
-        : '<tr><td colspan="6" class="vacio">Sin datos todavía</td></tr>';
-    }catch(err){
-      toast('No se pudo cargar el resumen: ' + err.message, 'err', 5000);
-      marcarConexion(false, 'Error de lectura');
-    }
-  }
-
   /* ── Arranque ────────────────────────────────────────────────── */
   async function iniciar(){
     // Si el CDN no cargó, la librería no existe y nada va a funcionar
@@ -1864,7 +1907,6 @@ const App = (() => {
     $$('[data-ir]').forEach(el => el.addEventListener('click',
       () => ir(el.dataset.ir)));
 
-    registrarPagina('inicio', pintarInicio);
     modulos.forEach(fn => {
       try { fn(); } catch(err){ console.error('[módulo]', err); }
     });
@@ -1889,6 +1931,337 @@ const App = (() => {
 })();
 
 document.addEventListener('DOMContentLoaded', App.iniciar);
+
+</script>
+<script>
+/* ══════ js/inicio.js ══════ */
+/* ═══════════════════════════════════════════════════════════════════
+   inicio.js — El tablero
+
+   Lo que se mira todos los días: cómo viene la semana, cómo viene el
+   mes, y dos gráficos del año que caben sin tapar lo demás.
+
+   Los gráficos son SVG dibujado a mano. La app no carga librerías de
+   gráficos: pesan más que todo el resto junta y acá hacen falta dos
+   formas nomás.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const Inicio = (() => {
+  const { $, esc, fmtMon, fmtFecha, toast } = App;
+
+  // Colores de serie. No son los de la marca a propósito: el verde y
+  // el azul de la app quedan a ΔE 10.6 entre sí, que es indistinguible
+  // hasta con visión normal. Estos dos pasan las cinco comprobaciones
+  // de separación, incluida la de daltonismo.
+  const SERIE_A = '#1baf7a';   // efectivo
+  const SERIE_B = '#eb6834';   // transferencia
+
+  const MES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun',
+                     'Jul','Ago','Set','Oct','Nov','Dic'];
+  const etiquetaMes = am => {
+    const [y,m] = am.split('-');
+    return MES_CORTO[Number(m)-1] + ' ' + y.slice(2);
+  };
+
+  let meses = [], semanas = [];
+
+  async function cargar(){
+    const hoy = new Date();
+    $('ini-fecha').textContent = 'Hoy es ' + hoy.toLocaleDateString('es-CR',
+      { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+
+    try{
+      const [res, ms, sems] = await Promise.all([
+        DB.resumen(),
+        DB.historial.porMes(),
+        DB.historial.semanas()
+      ]);
+      meses   = (ms   || []).slice().sort((a,b) => a.anio_mes.localeCompare(b.anio_mes));
+      semanas = (sems || []).slice().sort((a,b) => a.semana.localeCompare(b.semana));
+
+      pintarSemana();
+      pintarMes();
+      pintarGraficos();
+      pintarTabla();
+      pintarEmpresa();
+
+      if (res){
+        $('ini-historico').innerHTML =
+          `${res.registros ?? '—'} registros · ${res.semanas ?? '—'} semanas · ` +
+          `${res.empleados ?? '—'} personas · desde ${
+            res.primera_semana ? fmtFecha(res.primera_semana) : '—'}`;
+      }
+    }catch(err){
+      toast('No se pudo cargar el tablero: ' + err.message, 'err', 6000);
+      App.marcarConexion(false, 'Error de lectura');
+    }
+  }
+
+  /* ── La semana ───────────────────────────────────────────────── */
+  function pintarSemana(){
+    const u = semanas[semanas.length-1];
+    const ant = semanas[semanas.length-2];
+    if (!u){
+      $('ini-semana-cab').textContent = 'Todavía no hay semanas calculadas';
+      return;
+    }
+    const fin = new Date(u.semana + 'T12:00:00');
+    fin.setDate(fin.getDate()+6);
+    $('ini-semana-cab').innerHTML =
+      `Semana del <strong>${fmtFecha(u.semana)}</strong> al
+       <strong>${fmtFecha(fin.toISOString().split('T')[0])}</strong>`;
+
+    const vs = (ahora, antes) => {
+      if (!antes || !Number(antes)) return '';
+      const p = (Number(ahora) - Number(antes)) / Number(antes) * 100;
+      if (Math.abs(p) < 0.5) return '<span class="delta">igual que la anterior</span>';
+      return `<span class="delta ${p > 0 ? 'sube' : 'baja'}">${
+        p > 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(1)} % vs. la anterior</span>`;
+    };
+
+    $('ini-semana').innerHTML = [
+      ['Bruto',          u.bruto,         ant && ant.bruto,         ''],
+      ['CCSS',           u.ccss,          ant && ant.ccss,          'rojo'],
+      ['A entregar en mano', u.efectivo,  ant && ant.efectivo,      ''],
+      ['Al banco',       u.transferencia, ant && ant.transferencia, '']
+    ].map(([t, v, a, cl]) => `
+      <div class="metric">
+        <div class="metric-lbl">${t}</div>
+        <div class="metric-val" ${cl === 'rojo' ? 'style="color:var(--danger)"' : ''}>${fmtMon(v)}</div>
+        <div class="metric-sub">${vs(v, a)}</div>
+      </div>`).join('');
+
+    $('ini-semana-extra').innerHTML =
+      `${u.empleados} personas · ${Number(u.horas_normales).toFixed(0)} h ordinarias` +
+      (Number(u.horas_extra) ? ` · <strong style="color:var(--warn)">${
+        Number(u.horas_extra).toFixed(0)} h extra</strong>` : '') +
+      ` · neto ${fmtMon(u.neto)}`;
+  }
+
+  /* ── El mes ──────────────────────────────────────────────────── */
+  function pintarMes(){
+    const m = meses[meses.length-1];
+    const ant = meses[meses.length-2];
+    if (!m){ $('ini-mes').innerHTML = ''; return; }
+
+    const prom    = Number(m.semanas)   ? Number(m.bruto)   / Number(m.semanas)   : 0;
+    const promAnt = ant && Number(ant.semanas)
+                  ? Number(ant.bruto) / Number(ant.semanas) : 0;
+    // Comparar los totales del mes engaña cuando uno trae 5 semanas y
+    // el otro 4: la diferencia sería la semana de más, no el costo.
+    const dif = promAnt ? prom - promAnt : 0;
+
+    $('ini-mes-cab').innerHTML =
+      `<strong>${etiquetaMes(m.anio_mes)}</strong> · ${m.semanas} ${
+        m.semanas == 1 ? 'semana' : 'semanas'} cargadas`;
+    $('ini-mes').innerHTML = `
+      <div class="resumen-linea"><span>Bruto del mes</span>
+        <strong>${fmtMon(m.bruto)}</strong></div>
+      <div class="resumen-linea"><span>Promedio por semana</span>
+        <strong>${fmtMon(prom)}</strong></div>
+      <div class="resumen-linea"><span>CCSS</span>
+        <strong style="color:var(--danger)">−${fmtMon(m.ccss)}</strong></div>
+      <div class="resumen-linea"><span>Horas extra</span>
+        <strong style="color:${Number(m.horas_extra) ? 'var(--warn)' : 'inherit'}">${
+          Number(m.horas_extra || 0).toFixed(0)} h</strong></div>
+      ${promAnt ? `<div class="resumen-linea"
+            style="border-top:1px solid var(--border);padding-top:.4rem">
+        <span>Por semana, contra ${etiquetaMes(ant.anio_mes)}
+          <span class="ayuda">(${ant.semanas} sem.)</span></span>
+        <strong style="color:${dif > 0 ? 'var(--warn)' : 'var(--accent)'}">${
+          dif >= 0 ? '+' : '−'}${fmtMon(Math.abs(dif))}</strong></div>` : ''}`;
+  }
+
+  /* ── Gráficos ────────────────────────────────────────────────────
+     Dos formas y nada más: una línea para ver la tendencia del bruto
+     y barras apiladas para ver cuánta plata hay que tener en mano.  */
+  const ULTIMOS = 12;
+
+  function pintarGraficos(){
+    const datos = meses.slice(-ULTIMOS);
+    if (datos.length < 2){
+      $('ini-graficos').innerHTML =
+        '<div class="vacio">Hacen falta al menos dos meses para graficar</div>';
+      return;
+    }
+    $('ini-graficos').innerHTML = `
+      <div class="graf-caja">
+        <div class="graf-tit">Bruto por mes</div>
+        <div class="graf-sub">últimos ${datos.length} meses</div>
+        ${lineaBruto(datos)}
+      </div>
+      <div class="graf-caja">
+        <div class="graf-tit">Cómo se paga</div>
+        <div class="graf-sub">
+          <span class="leyenda"><i style="background:${SERIE_A}"></i>Efectivo</span>
+          <span class="leyenda"><i style="background:${SERIE_B}"></i>Transferencia</span>
+        </div>
+        ${barrasPago(datos)}
+      </div>`;
+  }
+
+  const AN = 420, AL = 128, MI = 8, MD = 8, MT = 16, MB = 20;
+
+  function lineaBruto(d){
+    const vals = d.map(m => Number(m.bruto));
+    const max = Math.max(...vals) * 1.08;
+    const px = AN - MI - MD, py = AL - MT - MB;
+    const x = i => MI + (d.length === 1 ? px/2 : i * px / (d.length - 1));
+    const y = v => MT + py - (v / max) * py;
+
+    const linea = vals.map((v,i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const area  = linea + ` L${x(vals.length-1).toFixed(1)},${MT+py} L${x(0).toFixed(1)},${MT+py} Z`;
+
+    // Etiquetas solo en el primero, el último y el máximo: un número
+    // sobre cada punto no se lee, se ensucia.
+    const iMax = vals.indexOf(Math.max(...vals));
+    const marcar = new Set([0, vals.length-1, iMax]);
+
+    return `<svg viewBox="0 0 ${AN} ${AL}" class="graf" role="img"
+      aria-label="Bruto mensual de los últimos ${d.length} meses">
+      ${[0.25,0.5,0.75,1].map(f => `<line x1="${MI}" x2="${AN-MD}"
+        y1="${(MT+py-f*py).toFixed(1)}" y2="${(MT+py-f*py).toFixed(1)}"
+        class="rejilla"/>`).join('')}
+      <path d="${area}" fill="${SERIE_A}" opacity=".10"/>
+      <path d="${linea}" fill="none" stroke="${SERIE_A}" stroke-width="2"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      ${vals.map((v,i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}"
+         r="${marcar.has(i) ? 4 : 2.5}" fill="${SERIE_A}" stroke="#fff" stroke-width="2"/>`).join('')}
+      ${vals.map((v,i) => marcar.has(i)
+        ? `<text x="${x(i).toFixed(1)}" y="${(y(v)-9).toFixed(1)}" class="val"
+             text-anchor="${i === 0 ? 'start' : i === vals.length-1 ? 'end' : 'middle'}"
+           >${(v/1e6).toFixed(1)}M</text>` : '').join('')}
+      ${d.map((m,i) => (i % Math.ceil(d.length/6) === 0 || i === d.length-1)
+        ? `<text x="${x(i).toFixed(1)}" y="${AL-6}" class="eje"
+             text-anchor="middle">${etiquetaMes(m.anio_mes)}</text>` : '').join('')}
+      ${d.map((m,i) => `<rect x="${(x(i)-px/d.length/2).toFixed(1)}" y="${MT}"
+         width="${(px/d.length).toFixed(1)}" height="${py}" fill="transparent">
+         <title>${etiquetaMes(m.anio_mes)}: ${fmtMon(m.bruto)} · ${m.semanas} semanas</title>
+      </rect>`).join('')}
+    </svg>`;
+  }
+
+  function barrasPago(d){
+    const tot = d.map(m => Number(m.efectivo) + Number(m.transferencia));
+    const max = Math.max(...tot, 1) * 1.08;
+    const px = AN - MI - MD, py = AL - MT - MB;
+    const paso = px / d.length;
+    const an = Math.min(26, paso * 0.6);
+
+    return `<svg viewBox="0 0 ${AN} ${AL}" class="graf" role="img"
+      aria-label="Efectivo y transferencia por mes">
+      ${[0.25,0.5,0.75,1].map(f => `<line x1="${MI}" x2="${AN-MD}"
+        y1="${(MT+py-f*py).toFixed(1)}" y2="${(MT+py-f*py).toFixed(1)}"
+        class="rejilla"/>`).join('')}
+      ${d.map((m,i) => {
+        const ef = Number(m.efectivo), tr = Number(m.transferencia);
+        const cx = MI + paso*i + paso/2 - an/2;
+        const hEf = (ef/max)*py, hTr = (tr/max)*py;
+        // 2 px de aire entre los dos tramos para que no se fundan
+        const yTr = MT + py - hTr;
+        const yEf = yTr - hEf - 2;
+        return `
+          <rect x="${cx.toFixed(1)}" y="${yTr.toFixed(1)}" width="${an.toFixed(1)}"
+                height="${Math.max(0,hTr).toFixed(1)}" fill="${SERIE_B}"/>
+          <rect x="${cx.toFixed(1)}" y="${Math.max(MT,yEf).toFixed(1)}" width="${an.toFixed(1)}"
+                height="${Math.max(0,hEf).toFixed(1)}" fill="${SERIE_A}" rx="3"/>
+          <rect x="${(MI+paso*i).toFixed(1)}" y="${MT}" width="${paso.toFixed(1)}"
+                height="${py}" fill="transparent">
+            <title>${etiquetaMes(m.anio_mes)}
+Efectivo: ${fmtMon(ef)}
+Transferencia: ${fmtMon(tr)}</title></rect>`;
+      }).join('')}
+      ${d.map((m,i) => (i % Math.ceil(d.length/6) === 0 || i === d.length-1)
+        ? `<text x="${(MI+paso*i+paso/2).toFixed(1)}" y="${AL-6}" class="eje"
+             text-anchor="middle">${etiquetaMes(m.anio_mes)}</text>` : '').join('')}
+    </svg>`;
+  }
+
+  /* ── Tabla de meses ──────────────────────────────────────────── */
+  function pintarTabla(){
+    const ult = meses.slice(-6).reverse();
+    $('ini-meses').innerHTML = ult.length ? ult.map(m => `<tr>
+      <td>${etiquetaMes(m.anio_mes)}</td>
+      <td class="num">${m.semanas}</td>
+      <td class="num">${m.empleados}</td>
+      <td class="num">${fmtMon(m.bruto)}</td>
+      <td class="num" style="color:var(--danger)">${fmtMon(m.ccss)}</td>
+      <td class="num" style="font-weight:600">${fmtMon(m.neto)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="vacio">Sin datos todavía</td></tr>';
+  }
+
+  /* ── Datos de la empresa y el logo ───────────────────────────────
+     El logo se guarda como data URI dentro de config: así viaja con
+     los comprobantes y las constancias, y se imprimen igual aunque
+     no haya internet.                                              */
+  function pintarEmpresa(){
+    const e = App.estado.cfg.empresa || {};
+    $('emp-razon').value  = e.razon_social || '';
+    $('emp-cedula').value = e.cedula_juridica || '';
+    $('emp-nombre').value = e.nombre_comercial || '';
+    $('emp-logo-prev').innerHTML = e.logo
+      ? `<img src="${esc(e.logo)}" alt="">`
+      : '<span class="ayuda">Sin logo</span>';
+  }
+
+  async function subirLogo(archivo){
+    if (!archivo) return;
+    if (!/^image\//.test(archivo.type))
+      return toast('Eso no es una imagen', 'warn');
+    if (archivo.size > 400 * 1024)
+      return toast('La imagen pesa más de 400 KB. Usá una más liviana.', 'warn', 6000);
+
+    const dataUri = await new Promise((ok, mal) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(fr.result);
+      fr.onerror = () => mal(new Error('No se pudo leer el archivo'));
+      fr.readAsDataURL(archivo);
+    });
+
+    try{
+      const cfg = Object.assign({}, App.estado.cfg.empresa || {}, { logo: dataUri });
+      await DB.guardarConfig('empresa', cfg);
+      App.estado.cfg.empresa = cfg;
+      pintarEmpresa();
+      toast('Logo guardado — ya sale en los comprobantes', 'ok');
+    }catch(err){
+      toast('No se pudo guardar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  async function guardarEmpresa(){
+    try{
+      const cfg = Object.assign({}, App.estado.cfg.empresa || {}, {
+        razon_social    : $('emp-razon').value.trim(),
+        cedula_juridica : $('emp-cedula').value.trim(),
+        nombre_comercial: $('emp-nombre').value.trim()
+      });
+      await DB.guardarConfig('empresa', cfg);
+      App.estado.cfg.empresa = cfg;
+      toast('Datos de la empresa guardados', 'ok');
+    }catch(err){
+      toast('No se pudo guardar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  function registrarModulo(){
+    App.registrarPagina('inicio', cargar);
+    $('emp-logo').addEventListener('change', e => subirLogo(e.target.files[0]));
+    $('emp-guardar').addEventListener('click', guardarEmpresa);
+    $('emp-logo-quitar').addEventListener('click', async () => {
+      const cfg = Object.assign({}, App.estado.cfg.empresa || {});
+      delete cfg.logo;
+      await DB.guardarConfig('empresa', cfg);
+      App.estado.cfg.empresa = cfg;
+      pintarEmpresa();
+      toast('Logo quitado', 'ok');
+    });
+  }
+
+  return { registrarModulo, cargar };
+})();
+
+App.registrarModulo(Inicio.registrarModulo);
 
 </script>
 <script>
@@ -1922,10 +2295,19 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
    * @param esFeriado 7 booleanos
    * @param cfg       parámetros de nómina
    */
-  function calcularSemana(emp, dias, esFeriado, cfg) {
+  /**
+   * Calcula la semana de un empleado.
+   *
+   * @param acuerdos 7 posiciones: null, 'doble' u 'ordinario'
+   */
+  function calcularSemana(emp, dias, esFeriado, cfg, acuerdos) {
     const c = Object.assign({}, CFG_POR_DEFECTO, cfg || {});
+    const ac = acuerdos || [null,null,null,null,null,null,null];
 
     let hNorm = 0, hExtra = 0, hDoble = 0, hExtraDoble = 0, hFeriadoBase = 0;
+    // Los acuerdos se llevan aparte: el comprobante los muestra en su
+    // propia línea y no se confunden con las horas de feriado.
+    let hAcDoble = 0, hAcExtraDoble = 0, hAcOrdinario = 0;
 
     for (let d = 0; d < 7; d++) {
       const j = dias[d];
@@ -1940,6 +2322,20 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
         hDoble      += dobles;
         hExtraDoble += Math.max(0, h - 8);
         hFeriadoBase += dobles;
+
+      } else if (ac[d] === 'doble') {
+        // Acuerdo al doble: se paga igual que un feriado, pero NO baja
+        // el tope semanal. Por eso quien tiene un acuerdo el domingo
+        // conserva sus 48 h ordinarias enteras.
+        hAcDoble      += Math.min(h, 8);
+        hAcExtraDoble += Math.max(0, h - 8);
+
+      } else if (ac[d] === 'ordinario') {
+        // Acuerdo ordinario: estas horas se pagan sencillas siempre,
+        // nunca se vuelven extras, pero sí ocupan lugar dentro de las
+        // 48 h, así que pueden empujar a las demás a extras.
+        hAcOrdinario += h;
+
       } else if (!c.extras_acumulativas) {
         // Extras por día: lo que pase de 8 horas ese día
         hNorm  += Math.min(h, 8);
@@ -1951,28 +2347,38 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
     }
 
     if (c.extras_acumulativas) {
-      // El tope semanal baja por las horas de feriado ya pagadas al doble
-      const tope = Math.max(0, c.descanso_divisor - hFeriadoBase);
+      // El tope baja por las horas de feriado ya pagadas al doble y por
+      // las del acuerdo ordinario, que ocupan lugar dentro de las 48.
+      const tope = Math.max(0, c.descanso_divisor - hFeriadoBase - hAcOrdinario);
       hExtra = Math.max(0, hNorm - tope);
       hNorm  = Math.min(hNorm, tope);
     }
+
+    // Las del acuerdo ordinario se suman a las normales para el pago:
+    // misma tarifa. Se guardan aparte solo para el comprobante.
+    hNorm += hAcOrdinario;
 
     const hBase   = Number(emp.hora_base) || 0;
     const fijo    = Number(emp.fijo_semanal) || 0;
     const tieneCC = !!emp.ccss;
     const esSplit = emp.tipo_pago === 'split';
 
+    // El doble y el extra doble se pagan igual vengan de feriado o de
+    // acuerdo; van juntos para el monto y separados para el comprobante.
+    const dobleTotal      = hDoble + hAcDoble;
+    const extraDobleTotal = hExtraDoble + hAcExtraDoble;
+
     // Descanso semanal: se paga ADEMÁS de las horas, no se descuenta
     const descUnit = tieneCC ? hBase * (c.descanso_horas / c.descanso_divisor) : 0;
-    const horasParaDesc = esSplit ? (hNorm + hDoble)
-                                  : (hNorm + hExtra + hDoble + hExtraDoble);
+    const horasParaDesc = esSplit ? (hNorm + dobleTotal)
+                                  : (hNorm + hExtra + dobleTotal + extraDobleTotal);
     const descanso = horasParaDesc * descUnit;
 
     const base = hBase > 0
       ? (hNorm * hBase)
       + (hExtra * hBase * c.mult_extra)
-      + (hDoble * hBase * c.mult_doble)
-      + (hExtraDoble * hBase * c.mult_extra_doble)
+      + (dobleTotal * hBase * c.mult_doble)
+      + (extraDobleTotal * hBase * c.mult_extra_doble)
       + descanso
       : 0;
 
@@ -1985,9 +2391,9 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
     if (esSplit) {
       // Split: lo ordinario y los dobles van por transferencia,
       // las extras en efectivo. La CCSS sale solo de la parte transferida.
-      const parteTr = (hNorm * hBase) + (hDoble * hBase * c.mult_doble) + descanso;
+      const parteTr = (hNorm * hBase) + (dobleTotal * hBase * c.mult_doble) + descanso;
       const parteEf = (hExtra * hBase * c.mult_extra)
-                    + (hExtraDoble * hBase * c.mult_extra_doble);
+                    + (extraDobleTotal * hBase * c.mult_extra_doble);
       ccssAplicado = tieneCC ? parteTr * (c.ccss_pct / 100) : 0;
       netoTr = parteTr - ccssAplicado;
       netoEf = parteEf;
@@ -2000,8 +2406,15 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
     return {
       horas_normales     : redondear(hNorm),
       horas_extra        : redondear(hExtra),
-      horas_dobles       : redondear(hDoble),
-      horas_extra_dobles : redondear(hExtraDoble),
+      horas_dobles       : redondear(dobleTotal),
+      horas_extra_dobles : redondear(extraDobleTotal),
+      // Desglose para el comprobante: cuánto vino de feriado y cuánto
+      // de acuerdo. La planilla guarda solo los totales de arriba.
+      horas_feriado_doble       : redondear(hDoble),
+      horas_feriado_extra_doble : redondear(hExtraDoble),
+      horas_acuerdo_doble       : redondear(hAcDoble),
+      horas_acuerdo_extra_doble : redondear(hAcExtraDoble),
+      horas_acuerdo_ordinario   : redondear(hAcOrdinario),
       descanso           : redondear(descanso),
       fijo               : redondear(fijo),
       bruto              : redondear(bruto),
@@ -2022,8 +2435,9 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
    * @param jornadas  { 'empId|YYYY-MM-DD': {entrada, salida} }
    * @param feriados  Set de fechas 'YYYY-MM-DD'
    * @param lunes     Date del lunes
+   * @param acuerdos  { 'empId|YYYY-MM-DD': {modo, nota} }
    */
-  function calcularPlanilla(empleados, jornadas, feriados, lunes, cfg) {
+  function calcularPlanilla(empleados, jornadas, feriados, lunes, cfg, acuerdos) {
     const fechas = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(lunes);
@@ -2031,10 +2445,18 @@ document.addEventListener('DOMContentLoaded', App.iniciar);
       fechas.push(d.toISOString().split('T')[0]);
     }
     const esFeriado = fechas.map(f => feriados.has(f));
+    const acs = acuerdos || {};
 
     return empleados.map(e => {
       const dias = fechas.map(f => jornadas[e.id + '|' + f] || null);
-      const r = calcularSemana(e, dias, esFeriado, cfg);
+      const misAcuerdos = fechas.map(f => acs[e.id + '|' + f] || null);
+      const r = calcularSemana(e, dias, esFeriado, cfg,
+                               misAcuerdos.map(a => a && a.modo));
+      // Los acuerdos de la semana viajan con el resultado para que el
+      // comprobante pueda poner la nota («Acuerdo Domingo: 2× Doble»).
+      r.acuerdos = misAcuerdos
+        .map((a, i) => a ? Object.assign({ fecha: fechas[i], dia: i }, a) : null)
+        .filter(Boolean);
       return Object.assign({ empleado_id: e.id, empleado: e }, r);
     });
   }
@@ -2713,10 +3135,9 @@ App.registrarModulo(Horario.registrar);
 const Planilla = (() => {
   const { $, esc, fmtMon, toast, modal } = App;
 
-  const DENOMINACIONES = [20000, 10000, 5000, 2000, 1000, 500, 100, 50, 25];
-
   let lunes      = lunesDe(new Date());
   let resultados = [];
+  let acuerdosSemana = [];
   let guardada   = false;
   let pestana    = 'calculo';
 
@@ -2737,25 +3158,30 @@ const Planilla = (() => {
     $('pl-body').innerHTML = '<tr><td colspan="10" class="vacio">Calculando…</td></tr>';
     try{
       const desde = iso(lunes), hasta = iso(masDias(lunes,6));
-      const [emps, jrs, fers, yaGuardada, vacs, incs, rebs] = await Promise.all([
+      const [emps, jrs, fers, yaGuardada, vacs, incs, rebs, acs] = await Promise.all([
         DB.empleados.listar(),
         DB.horario.jornadasDeSemana(desde),
         DB.horario.feriados(desde, hasta),
         DB.planilla.deSemana(desde),
         DB.vacaciones.deSemana(desde),
         DB.incapacidades.deSemana(desde),
-        DB.rebajos.aplicaciones(desde)
+        DB.rebajos.aplicaciones(desde),
+        DB.horario.acuerdos(desde, hasta)
       ]);
 
       const jornadas = {};
       jrs.forEach(j => { jornadas[j.empleado_id + '|' + j.fecha] = j; });
       const feriados = new Set(fers.map(f => f.fecha));
+      const acuerdos = {};
+      acs.forEach(a => { acuerdos[a.empleado_id + '|' + a.fecha] = a; });
+      acuerdosSemana = acs;
 
       const cfg = App.estado.cfg.nomina || {};
       // El 999 (OTROS MONTOS) no sale del horario: se maneja aparte
       const paraCalcular = emps.filter(e => e.codigo_reloj !== 999);
 
-      resultados = Calculo.calcularPlanilla(paraCalcular, jornadas, feriados, lunes, cfg);
+      resultados = Calculo.calcularPlanilla(paraCalcular, jornadas, feriados,
+                                            lunes, cfg, acuerdos);
 
       // Vacaciones canceladas, incapacidades y cuotas de rebajo entran
       // después del cálculo de horas, no antes: no tocan la base que
@@ -2992,62 +3418,100 @@ const Planilla = (() => {
          </tr>` : '';
   }
 
-  /* ── Efectivo y billetes ─────────────────────────────────────── */
+  /* ── Efectivo y billetes ─────────────────────────────────────────
+     Nadie puede pagar ₡223 906 en efectivo: no hay cómo armar los
+     ₡6. El monto se redondea al múltiplo de ₡500 más cercano y eso
+     es lo que se entrega, igual que se venía haciendo.
+
+     El redondeo es solo para el pago en mano. La planilla guarda el
+     monto exacto: lo que la persona devengó no cambia porque no
+     haya moneda para dárselo.                                      */
+  const PASO_REDONDEO = 500;
+  const redondearPago = n => Math.round((Number(n) || 0) / PASO_REDONDEO) * PASO_REDONDEO;
+
+  // Con el redondeo a ₡500 nunca hace falta nada por debajo de ₡500
+  const BILLETES = [20000, 10000, 5000, 2000, 1000, 500];
+
+  function enBilletes(monto){
+    let resto = Math.round(monto);
+    const cuenta = {};
+    BILLETES.forEach(d => {
+      cuenta[d] = Math.floor(resto / d);
+      resto -= cuenta[d] * d;
+    });
+    return cuenta;   // con el redondeo, resto siempre queda en 0
+  }
+
   function pintarEfectivo(){
     const items = resultados.filter(r => r.neto_efectivo > 0)
       .sort((a,b) => (a.empleado.codigo_reloj ?? 9999) - (b.empleado.codigo_reloj ?? 9999));
-    const total = items.reduce((s,r) => s + r.neto_efectivo, 0);
 
-    // Cuántos billetes de cada denominación hacen falta en total
+    const totalExacto = items.reduce((s,r) => s + r.neto_efectivo, 0);
+    const totalRedondeado = items.reduce((s,r) => s + redondearPago(r.neto_efectivo), 0);
+    const difTotal = totalRedondeado - totalExacto;
+
     const necesita = {};
-    DENOMINACIONES.forEach(d => necesita[d] = 0);
+    BILLETES.forEach(d => necesita[d] = 0);
     items.forEach(r => {
-      let resto = Math.round(r.neto_efectivo);
-      DENOMINACIONES.forEach(d => {
-        const n = Math.floor(resto / d);
-        if (n > 0){ necesita[d] += n; resto -= n * d; }
-      });
+      const c = enBilletes(redondearPago(r.neto_efectivo));
+      BILLETES.forEach(d => necesita[d] += c[d]);
     });
 
     $('pl-ef-body').innerHTML = items.length ? items.map(r => {
-      let resto = Math.round(r.neto_efectivo);
-      const piezas = [];
-      DENOMINACIONES.forEach(d => {
-        const n = Math.floor(resto / d);
-        if (n > 0){ piezas.push(n + ' × ' + fmtMon(d)); resto -= n * d; }
-      });
+      const red = redondearPago(r.neto_efectivo);
+      const dif = red - r.neto_efectivo;
+      const c = enBilletes(red);
+      // Si parte del monto no vino del horario, conviene verlo acá
+      const extra = (r.extras || []).reduce((s,x) =>
+        s + (x.pago === 'transferencia' ? 0 : x.monto), 0);
       return `<tr>
-        <td style="font-family:'DM Mono',monospace;color:var(--text3);font-size:11px">${r.empleado.codigo_reloj ?? '—'}</td>
-        <td style="font-weight:500;font-size:12px">${esc(r.empleado.nombre.split(' ').slice(0,3).join(' '))}</td>
-        <td class="num" style="font-weight:600">${fmtMon(r.neto_efectivo)}</td>
-        <td style="font-size:11px;color:var(--text2)">${piezas.join(' · ')}${resto ? ' <span style="color:var(--warn)">+ ₡'+resto+' suelto</span>' : ''}</td>
+        <td class="mono-sm">${r.empleado.codigo_reloj ?? '—'}</td>
+        <td style="font-weight:500;font-size:12px">
+          ${esc(r.empleado.nombre.split(' ').slice(0,3).join(' '))}
+          ${extra > 0 ? `<span class="badge b-warn" style="margin-left:5px;font-size:10px"
+             title="Incluye montos que no salen del horario">+ ${fmtMon(extra)}</span>` : ''}
+        </td>
+        <td class="num" style="color:var(--text3)">${fmtMon(r.neto_efectivo)}</td>
+        <td class="num" style="font-weight:700">${fmtMon(red)}
+          <span style="font-size:10px;font-weight:400;color:${dif < 0 ? 'var(--danger)' : 'var(--text3)'}">
+            ${dif === 0 ? '' : (dif > 0 ? '+' : '−') + '₡' + Math.abs(Math.round(dif))}</span></td>
+        ${BILLETES.map(d => `<td class="num">${c[d] || '—'}</td>`).join('')}
       </tr>`;
     }).join('')
-    : '<tr><td colspan="4" class="vacio">Nadie cobra en efectivo esta semana</td></tr>';
+    : '<tr><td colspan="10" class="vacio">Nadie cobra en efectivo esta semana</td></tr>';
 
     $('pl-ef-foot').innerHTML = items.length
       ? `<tr style="border-top:2px solid var(--border2);font-weight:700">
-           <td colspan="2">TOTAL EN EFECTIVO · ${items.length} personas</td>
-           <td class="num" style="color:var(--accent);font-size:14px">${fmtMon(total)}</td>
-           <td></td>
+           <td colspan="2">TOTAL · ${items.length} personas</td>
+           <td class="num" style="color:var(--text3)">${fmtMon(totalExacto)}</td>
+           <td class="num" style="color:var(--accent);font-size:14px">${fmtMon(totalRedondeado)}</td>
+           ${BILLETES.map(d => `<td class="num">${necesita[d] || '—'}</td>`).join('')}
          </tr>` : '';
 
+    const piezas = BILLETES.reduce((s,d) => s + necesita[d], 0);
     $('pl-billetes').innerHTML = items.length ? `
       <div class="card-title">Lo que hay que pedir al banco</div>
       <div class="tab-wrap"><table>
         <thead><tr><th>Denominación</th><th style="text-align:right">Cantidad</th>
                    <th style="text-align:right">Suma</th></tr></thead>
-        <tbody>${DENOMINACIONES.filter(d => necesita[d] > 0).map(d => `<tr>
+        <tbody>${BILLETES.filter(d => necesita[d] > 0).map(d => `<tr>
           <td>${fmtMon(d)}</td>
           <td class="num" style="font-weight:600">${necesita[d]}</td>
           <td class="num">${fmtMon(d * necesita[d])}</td>
         </tr>`).join('')}</tbody>
         <tfoot><tr style="border-top:2px solid var(--border2);font-weight:700">
           <td>TOTAL</td>
-          <td class="num">${Object.values(necesita).reduce((a,b)=>a+b,0)} piezas</td>
-          <td class="num">${fmtMon(DENOMINACIONES.reduce((s,d)=>s+d*necesita[d],0))}</td>
+          <td class="num">${piezas} ${piezas === 1 ? 'billete' : 'billetes'}</td>
+          <td class="num">${fmtMon(totalRedondeado)}</td>
         </tr></tfoot>
-      </table></div>` : '';
+      </table></div>
+      <p class="ayuda" style="margin-top:.7rem">
+        El redondeo al múltiplo de ₡500 más cercano deja una diferencia de
+        <strong style="color:${difTotal < 0 ? 'var(--danger)' : 'var(--accent)'}">${
+          difTotal >= 0 ? '+' : '−'}${fmtMon(Math.abs(difTotal))}</strong>
+        esta semana${difTotal > 0 ? ' a favor del personal' : difTotal < 0 ? ' a favor de la empresa' : ''}.
+        La planilla guarda el monto exacto; el redondeo es solo para entregar el efectivo.
+      </p>` : '';
   }
 
   /* ── Guardar ─────────────────────────────────────────────────── */
@@ -3075,102 +3539,234 @@ const Planilla = (() => {
     }
   }
 
-  /* ── Comprobantes ────────────────────────────────────────────── */
-  function comprobantes(){
-    if (!resultados.length){ toast('Calculá la planilla primero', 'warn'); return; }
+  /* ── Comprobantes ────────────────────────────────────────────────
+     Dos juegos: todos, o solo los asegurados de la CCSS. Los dos
+     llevan portada, porque el paquete se entrega y se archiva.
+
+     Cada línea muestra la tarifa, no solo el monto: quien firma tiene
+     derecho a ver de dónde salió su plata.                          */
+
+  const MULT = { normal:1, extra:1.5, doble:2, extraDoble:3.5 };
+
+  function lineasDe(r){
+    const e = r.empleado;
+    const c = App.estado.cfg.nomina || {};
+    const hb = Number(e.hora_base) || 0;
+    const L = [];
+    const linea = (nombre, horas, tarifa, clase) =>
+      L.push({ nombre, horas, tarifa, monto: horas * tarifa, clase });
+
+    // Las del acuerdo ordinario van dentro de las normales
+    const normales = r.horas_normales;
+    if (normales) linea('Horas normales', normales, hb);
+    if (r.horas_extra) linea('Horas extra', r.horas_extra, hb * (c.mult_extra ?? MULT.extra));
+
+    if (r.horas_feriado_doble)
+      linea('2× Feriado', r.horas_feriado_doble, hb * (c.mult_doble ?? MULT.doble), 'resalta');
+    if (r.horas_feriado_extra_doble)
+      linea('2× Extras del feriado', r.horas_feriado_extra_doble,
+            hb * (c.mult_extra_doble ?? MULT.extraDoble), 'resalta');
+
+    if (r.horas_acuerdo_doble)
+      linea('2× Acuerdo Doble', r.horas_acuerdo_doble,
+            hb * (c.mult_doble ?? MULT.doble), 'resalta');
+    if (r.horas_acuerdo_extra_doble)
+      linea('2× Extras del acuerdo Doble', r.horas_acuerdo_extra_doble,
+            hb * (c.mult_extra_doble ?? MULT.extraDoble), 'resalta');
+
+    if (r.descanso){
+      const horasDesc = r.horas_normales + r.horas_extra +
+                        r.horas_dobles + r.horas_extra_dobles;
+      L.push({ nombre:'Porción de descanso', horas:redondear2(horasDesc),
+               tarifa: horasDesc ? r.descanso / horasDesc : 0, monto:r.descanso });
+    }
+    if (r.fijo) L.push({ nombre:'Salario fijo / adicional', monto:r.fijo });
+
+    (r.extras || []).forEach(x =>
+      L.push({ nombre: x.etiqueta + ' (' + x.detalle + ')', monto: x.monto, clase:'resalta' }));
+
+    return L;
+  }
+
+  const redondear2 = n => Math.round((Number(n) || 0) * 100) / 100;
+
+  const DIA_NOMBRE = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+  function notaAcuerdos(r){
+    if (!r.acuerdos || !r.acuerdos.length) return '';
+    return r.acuerdos.map(a => {
+      const etiqueta = a.modo === 'doble' ? '2× Doble' : 'Ordinario';
+      const detalle = a.modo === 'doble' && (r.horas_acuerdo_doble || r.horas_acuerdo_extra_doble)
+        ? ` (${r.horas_acuerdo_doble} h base` +
+          (r.horas_acuerdo_extra_doble ? ` + ${r.horas_acuerdo_extra_doble} h extra` : '') + ')'
+        : a.modo === 'ordinario' && r.horas_acuerdo_ordinario
+          ? ` (${r.horas_acuerdo_ordinario} h a tarifa sencilla)` : '';
+      return `Acuerdo ${DIA_NOMBRE[a.dia]}: ${etiqueta}${detalle}` +
+             (a.nota ? ' · ' + esc(a.nota) : '');
+    }).join('<br>');
+  }
+
+  function unComprobante(r, periodo){
+    const e = r.empleado;
     const emp = App.estado.cfg.empresa || {};
+    const logo = emp.logo
+      ? `<img class="logo" src="${esc(emp.logo)}" alt="">` : '';
+    const L = lineasDe(r);
+    const nota = notaAcuerdos(r);
+    const redondeado = r.neto_efectivo > 0 &&
+                       redondearPago(r.neto_efectivo) !== Math.round(r.neto_efectivo)
+      ? redondearPago(r.neto_efectivo) : null;
+
+    const etiquetas = [];
+    if (e.codigo_reloj != null) etiquetas.push('ID Reloj: ' + e.codigo_reloj);
+    if (e.puesto) etiquetas.push(esc(e.puesto));
+    etiquetas.push(e.ccss ? 'Asegurado CCSS' : 'Sin CCSS');
+
+    return `<div class="comp">
+      ${logo}
+      <div class="comp-empresa">${esc(emp.razon_social || 'PROFECHA S.A.')}${
+        emp.nombre_comercial ? ' — ' + esc(emp.nombre_comercial) : ''}</div>
+      <div class="comp-per">Comprobante de pago — Semana del ${periodo}</div>
+      <div class="comp-nombre">${esc(e.nombre)}</div>
+      <div class="comp-meta">${etiquetas.join(' · ')}</div>
+      <table class="det">
+        ${L.map(x => `<tr class="${x.clase || ''}">
+          <td>${esc(x.nombre)}${x.horas != null && x.tarifa
+            ? ` <span class="tar">(${x.horas} h × ${fmtMon(x.tarifa)})</span>` : ''}</td>
+          <td class="m">${fmtMon(x.monto)}</td></tr>`).join('')}
+        <tr class="sub"><td>Salario bruto</td><td class="m">${fmtMon(r.bruto)}</td></tr>
+        ${r.ccss ? `<tr class="neg"><td>Rebajo CCSS (${
+          (App.estado.cfg.nomina?.ccss_pct ?? 10.83)}%)</td>
+          <td class="m">−${fmtMon(r.ccss)}</td></tr>` : ''}
+        ${(r.rebajos || []).map(x => `<tr class="neg">
+          <td>Rebajo · ${esc(x.concepto)}</td>
+          <td class="m">−${fmtMon(x.cuota)}</td></tr>`).join('')}
+        <tr class="tot"><td>SALARIO NETO</td><td class="m">${fmtMon(r.neto)}</td></tr>
+      </table>
+      ${nota ? `<div class="nota">${nota}</div>` : ''}
+      ${r.es_split ? `<div class="reparto">Transferencia ${fmtMon(r.neto_transferencia)}
+         · Efectivo ${fmtMon(r.neto_efectivo)}</div>` : ''}
+      ${redondeado ? `<div class="reparto">Entregado en efectivo:
+         <strong>${fmtMon(redondeado)}</strong> (redondeado a ₡500)</div>` : ''}
+      <div class="firmas">
+        <span>Pago: ${r.es_split ? 'Split'
+          : e.tipo_pago === 'transferencia' ? 'Transferencia' : 'Efectivo'}</span>
+        <span>Cédula: <i>${esc(e.cedula || '')}</i></span>
+        <span>Firma: <i></i></span>
+      </div>
+    </div>`;
+  }
+
+  function portada(titulo, periodo, cuantos, total){
+    const emp = App.estado.cfg.empresa || {};
+    return `<div class="portada">
+      ${emp.logo ? `<img src="${esc(emp.logo)}" alt="">` : ''}
+      <div class="p-razon">${esc(emp.razon_social || 'PROFECHA S.A.')}</div>
+      <h1>${esc(emp.nombre_comercial || 'La Fiesta del Maíz')}</h1>
+      <div class="p-sub">${esc(titulo)}</div>
+      <div class="p-periodo">${periodo}</div>
+      <div class="p-datos">${cuantos} ${cuantos === 1 ? 'comprobante' : 'comprobantes'}
+        · ${fmtMon(total)}</div>
+      <div class="p-pie">Documento confidencial · Uso interno</div>
+    </div>`;
+  }
+
+  function comprobantes(soloCCSS){
+    if (!resultados.length){ toast('Calculá la planilla primero', 'warn'); return; }
+
     const fin = masDias(lunes,6);
-    const periodo = `${corto(lunes)} al ${corto(fin)} de ${fin.getFullYear()}`;
+    const periodo = `${corto(lunes)} ${lunes.getFullYear()} al ${corto(fin)} ${fin.getFullYear()}`;
 
-    const bloques = resultados
-      .filter(r => r.neto > 0)
-      .sort((a,b) => (a.empleado.codigo_reloj ?? 9999) - (b.empleado.codigo_reloj ?? 9999))
-      .map(r => {
-        const e = r.empleado;
-        const lineas = [];
-        if (r.horas_normales)     lineas.push(['Horas ordinarias', r.horas_normales, r.horas_normales * e.hora_base]);
-        if (r.horas_extra)        lineas.push(['Horas extra', r.horas_extra, r.horas_extra * e.hora_base * 1.5]);
-        if (r.horas_dobles)       lineas.push(['Horas dobles (feriado)', r.horas_dobles, r.horas_dobles * e.hora_base * 2]);
-        if (r.horas_extra_dobles) lineas.push(['Extra en feriado', r.horas_extra_dobles, r.horas_extra_dobles * e.hora_base * 3.5]);
-        if (r.descanso)           lineas.push(['Descanso semanal', '', r.descanso]);
-        if (r.fijo)               lineas.push(['Fijo semanal', '', r.fijo]);
-        (r.extras || []).forEach(x =>
-          lineas.push([x.etiqueta + ' (' + x.detalle + ')', '', x.monto]));
-        return `
-        <div class="comp">
-          <div class="comp-h">${esc(emp.razon_social || 'PROFECHA S.A.')}</div>
-          <div class="comp-h2">COMPROBANTE DE PAGO</div>
-          <div class="comp-h3">Semana del ${periodo}</div>
-          <div class="comp-emp"><span class="lbl">EMPLEADO:</span>
-            <span class="val">${esc(e.nombre)}</span></div>
-          ${e.cedula ? `<div class="comp-emp"><span class="lbl">CÉDULA:</span>
-            <span class="val">${esc(e.cedula)}</span></div>` : ''}
-          <table class="det">
-            <tr><th>Concepto</th><th style="text-align:right">Horas</th>
-                <th style="text-align:right">Monto</th></tr>
-            ${lineas.map(([c,h,m]) => `<tr><td>${c}</td>
-              <td style="text-align:right">${h || ''}</td>
-              <td style="text-align:right">${fmtMon(m)}</td></tr>`).join('')}
-            <tr class="sub"><td colspan="2">SALARIO BRUTO</td>
-                <td style="text-align:right">${fmtMon(r.bruto)}</td></tr>
-            ${r.ccss ? `<tr><td colspan="2">Deducción CCSS</td>
-                <td style="text-align:right">− ${fmtMon(r.ccss)}</td></tr>` : ''}
-            ${(r.rebajos || []).map(x => `<tr><td colspan="2">Rebajo · ${esc(x.concepto)}</td>
-                <td style="text-align:right">− ${fmtMon(x.cuota)}</td></tr>`).join('')}
-            <tr class="tot"><td colspan="2">NETO A PAGAR</td>
-                <td style="text-align:right">${fmtMon(r.neto)}</td></tr>
-          </table>
-          ${r.es_split ? `<div class="nota">Transferencia ${fmtMon(r.neto_transferencia)}
-             · Efectivo ${fmtMon(r.neto_efectivo)}</div>` : ''}
-          <div class="comp-firmas">
-            <div><span class="lbl">FIRMA:</span><span class="linea"></span></div>
-            <div><span class="lbl">FECHA:</span><span class="linea"></span></div>
-          </div>
-        </div>`;
-      }).join('');
+    const lista = resultados
+      .filter(r => r.neto > 0 && (!soloCCSS || r.empleado.ccss))
+      .sort((a,b) => (a.empleado.codigo_reloj ?? 9999) - (b.empleado.codigo_reloj ?? 9999));
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Comprobantes — ${periodo}</title>
+    if (!lista.length){
+      toast(soloCCSS ? 'Nadie asegurado cobra esta semana' : 'No hay nada que imprimir', 'warn');
+      return;
+    }
+
+    const total = lista.reduce((s,r) => s + r.neto, 0);
+    const titulo = soloCCSS ? 'Planilla semanal — personal asegurado CCSS'
+                            : 'Planilla semanal de pago';
+
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>${esc(titulo)} — ${periodo}</title>
 <style>
-@page{size:letter;margin:1.2cm}
-*{box-sizing:border-box} html,body{margin:0;padding:0}
-body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1a1917;background:#e5e5e5}
-.barra{position:sticky;top:0;z-index:100;background:#2d5a3d;color:#fff;padding:.6rem 1rem;
-  display:flex;gap:1rem;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.2)}
-.hoja{max-width:21.5cm;margin:1.2rem auto;background:#fff;padding:1.2cm;
-  box-shadow:0 4px 20px rgba(0,0,0,.1)}
-.comp{border-bottom:1px dashed #999;padding:14px 6px 18px;page-break-inside:avoid}
-.comp-h{font-weight:700;font-size:12.5px}
-.comp-h2{font-weight:700;font-size:12px;margin-top:1px}
-.comp-h3{font-size:11px;margin-top:1px;color:#444}
-.comp-emp{margin-top:8px;font-size:12px}
-.comp-emp .lbl{font-weight:600} .comp-emp .val{margin-left:8px}
-.det{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px}
-.det th{border-bottom:1px solid #333;padding:3px 6px;text-align:left;font-size:10px;
-  text-transform:uppercase;letter-spacing:.03em}
-.det td{padding:3px 6px;border-bottom:1px solid #eee}
-.det .sub td{font-weight:700;border-top:1px solid #333;border-bottom:0}
-.det .tot td{font-weight:700;font-size:13px;background:#f2f2f2;border-top:1px solid #333}
-.nota{margin-top:6px;font-size:10.5px;color:#555;font-style:italic}
-.comp-firmas{margin-top:22px;display:flex;gap:22px;font-size:11px}
-.comp-firmas>div{flex:1;display:flex;align-items:flex-end;gap:6px}
-.comp-firmas .lbl{font-weight:600;white-space:nowrap}
-.comp-firmas .linea{flex:1;border-bottom:1px solid #333;min-height:14px}
-@media print{.noprint{display:none!important}body{background:#fff}
-  .hoja{box-shadow:none;margin:0;max-width:none;padding:0}}
+  @page { size:letter; margin:1.2cm }
+  *{ box-sizing:border-box }
+  body{ font:11px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif; color:#1a1917;
+        margin:0; padding:1rem; background:#e9e7e2 }
+
+  /* ── Portada ── */
+  .portada{ background:#fff; width:21.6cm; min-height:27.9cm; margin:0 auto 1rem;
+            display:flex; flex-direction:column; align-items:center;
+            justify-content:center; text-align:center; padding:4cm 2cm;
+            page-break-after:always }
+  .portada img{ width:110px; height:110px; object-fit:contain; margin-bottom:2rem }
+  .p-razon{ font-size:10px; letter-spacing:3px; color:#777; text-transform:uppercase }
+  .portada h1{ font-size:26px; margin:.5rem 0 .3rem; font-weight:600 }
+  .p-sub{ font-size:12px; color:#666; margin-bottom:3rem }
+  .p-periodo{ font-family:'DM Mono',ui-monospace,monospace; font-size:16px;
+              font-weight:600; letter-spacing:-.5px }
+  .p-datos{ font-size:11px; color:#666; margin-top:.8rem }
+  .p-pie{ margin-top:auto; font-size:9px; color:#999 }
+
+  /* ── Hoja de comprobantes ── */
+  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.6cm }
+  .comp{ position:relative; border:1px solid #ccc; border-radius:4px;
+         padding:10px 12px; margin-bottom:8px; page-break-inside:avoid }
+  .comp .logo{ position:absolute; top:10px; right:12px;
+               width:44px; height:44px; object-fit:contain }
+  .comp-empresa{ font-size:10px; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.3px }
+  .comp-per{ font-size:9.5px; color:#666; margin-top:1px }
+  .comp-nombre{ font-size:14px; font-weight:700; margin-top:6px; padding-right:50px }
+  .comp-meta{ font-size:9px; color:#777; margin-bottom:6px }
+  .det{ width:100%; border-collapse:collapse; font-size:10.5px }
+  .det td{ padding:2.5px 0; border-bottom:1px solid #f0efec }
+  .det td.m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace;
+             white-space:nowrap }
+  .det .tar{ color:#888; font-size:9.5px }
+  .det .resalta td{ color:#2d5a3d }
+  .det .neg td{ color:#a8392b }
+  .det .sub td{ font-weight:700; border-top:1px solid #999; border-bottom:none;
+                padding-top:4px }
+  .det .tot td{ font-weight:700; font-size:12px; border-top:1px solid #333;
+                border-bottom:none; padding-top:4px }
+  .nota{ margin-top:6px; padding:4px 8px; border-left:3px solid #2d5a3d;
+         background:#f4f7f4; font-size:9.5px }
+  .reparto{ margin-top:5px; font-size:9.5px; color:#555 }
+  .firmas{ display:flex; gap:14px; margin-top:12px; font-size:9.5px; color:#555 }
+  .firmas span{ flex:1 }
+  .firmas i{ display:inline-block; min-width:70px; border-bottom:1px solid #999;
+             font-style:normal }
+
+  /* ── Barra, solo en pantalla ── */
+  .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
+          padding:.7rem 1.1rem; border-radius:6px; display:flex; gap:1rem;
+          align-items:center; font-size:13px }
+  .barra button{ font:inherit; background:rgba(255,255,255,.15); color:#fff;
+                 border:1px solid rgba(255,255,255,.4); padding:6px 16px;
+                 border-radius:5px; cursor:pointer }
+  @media print{
+    body{ background:#fff; padding:0 }
+    .barra{ display:none }
+    .hoja,.portada{ width:auto; margin:0; padding:0; box-shadow:none }
+    .portada{ min-height:auto; height:100vh }
+  }
 </style></head><body>
-<div class="barra noprint">
-  <span style="flex:1">Comprobantes · semana del ${periodo}</span>
-  <button onclick="window.print()" style="background:#fff;color:#2d5a3d;border:none;
-    padding:6px 16px;border-radius:5px;font-weight:600;cursor:pointer">🖨 Imprimir</button>
-  <button onclick="window.close()" style="background:transparent;color:#fff;
-    border:1px solid rgba(255,255,255,.4);padding:6px 14px;border-radius:5px;
-    cursor:pointer">Cerrar</button>
+<div class="barra">
+  <span>${esc(titulo)} · ${periodo} · ${lista.length} ${
+    lista.length === 1 ? 'persona' : 'personas'}</span>
+  <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
 </div>
-<div class="hoja">${bloques}</div>
+${portada(titulo, periodo, lista.length, total)}
+<div class="hoja">${lista.map(r => unComprobante(r, periodo)).join('')}</div>
 </body></html>`;
 
     const w = window.open('', '_blank');
+    if (!w){ toast('El navegador bloqueó la ventana. Permití las emergentes.', 'warn', 6000); return; }
     w.document.write(html); w.document.close();
   }
 
@@ -3185,7 +3781,8 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1a1917;backgro
     $('pl-hoy').addEventListener('click', () => { lunes = lunesDe(new Date()); calcular(); });
     $('pl-recalcular').addEventListener('click', calcular);
     $('pl-guardar').addEventListener('click', guardar);
-    $('pl-comprobantes').addEventListener('click', comprobantes);
+    $('pl-comprobantes').addEventListener('click', () => comprobantes(false));
+    $('pl-comprobantes-ccss').addEventListener('click', () => comprobantes(true));
     ['calculo','transfer','efectivo'].forEach(p =>
       $('pl-tab-'+p).addEventListener('click', () => verPestana(p)));
   }
