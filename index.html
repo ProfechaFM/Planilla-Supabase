@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-08
+  Armado el 2026-10-09
 -->
 <html lang="es">
 <head>
@@ -262,6 +262,7 @@ tbody tr:hover td{background:var(--bg)}
            border-radius:var(--rs);display:flex;align-items:center;
            justify-content:center;background:var(--bg);overflow:hidden}
 .logo-prev img{max-width:100%;max-height:100%;object-fit:contain}
+.alert{align-items:center}
 
 </style>
 </head>
@@ -502,6 +503,8 @@ tbody tr:hover td{background:var(--bg)}
           <div class="metric-val" id="m-pl-tr">—</div>
           <div class="metric-sub">al banco</div></div>
       </div>
+
+      <div id="pl-aviso" style="display:none;margin-bottom:1rem"></div>
 
       <div class="card">
         <div class="abar" style="margin-top:0;margin-bottom:1rem">
@@ -969,6 +972,7 @@ tbody tr:hover td{background:var(--bg)}
         <div class="abar" style="margin:0 0 1rem">
           <button class="btn btn-s" id="sal-add-sal">+ Agregar salonero</button>
           <button class="btn btn-s" id="sal-add-ayu">+ Agregar ayudante</button>
+          <button class="btn btn-s" id="sal-equipo">Equipo fijo</button>
           <input class="buscador" id="sal-nota" placeholder="Nota de la semana (opcional)"
                  style="margin-left:auto;max-width:320px">
         </div>
@@ -1251,6 +1255,23 @@ const DB = (() => {
     async jornadasDeSemana(lunes){
       const { data, error } = await cli.from('jornadas')
         .select('*').eq('semana', lunes);
+      if (error) throw error;
+      return data;
+    },
+
+    // La última semana que tiene horario cargado. Sirve para no dejar
+    // a nadie mirando una semana vacía sin saber por qué.
+    async ultimaSemanaConHorario(){
+      const { data, error } = await cli.from('jornadas')
+        .select('semana').order('semana', { ascending:false }).limit(1);
+      if (error) throw error;
+      return data && data.length ? data[0].semana : null;
+    },
+
+    // Filas cuya columna semana no corresponde con su fecha. Si alguna
+    // vez se cargan jornadas por fuera de la app, acá se ven.
+    async jornadasDescuadradas(){
+      const { data, error } = await cli.from('v_jornadas_semana_mal').select('*');
       if (error) throw error;
       return data;
     },
@@ -1662,6 +1683,40 @@ const DB = (() => {
           .insert(filas.map(f => ({ semana, ...f })));
         if (e3) throw e3;
       }
+    },
+
+    /* ── El equipo fijo ──────────────────────────────────────────
+       Se arma una vez y se repite todas las semanas. Quien renuncia
+       o cambia de puesto se desactiva: deja de aparecer, pero no se
+       pierde lo que ya cobró.                                     */
+    async plantilla({ soloActivos = true } = {}){
+      let q = cli.from('v_salon_plantilla').select('*')
+                 .order('orden', { ascending:true, nullsFirst:false });
+      if (soloActivos) q = q.eq('activo', true);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+
+    async agregarAlEquipo(empleadoId, rol, orden){
+      const { error } = await cli.from('salon_plantilla').upsert({
+        empleado_id: empleadoId, rol, activo: true, orden: orden ?? null,
+        actualizado_en: new Date().toISOString()
+      }, { onConflict:'empleado_id' });
+      if (error) throw error;
+    },
+
+    async cambiarEnEquipo(empleadoId, cambios){
+      const { error } = await cli.from('salon_plantilla')
+        .update(Object.assign({ actualizado_en: new Date().toISOString() }, cambios))
+        .eq('empleado_id', empleadoId);
+      if (error) throw error;
+    },
+
+    async sacarDelEquipo(empleadoId){
+      const { error } = await cli.from('salon_plantilla')
+        .delete().eq('empleado_id', empleadoId);
+      if (error) throw error;
     },
 
     async historial(){
@@ -3138,6 +3193,44 @@ const Planilla = (() => {
   let lunes      = lunesDe(new Date());
   let resultados = [];
   let acuerdosSemana = [];
+  let sinHorario = false;
+
+  /* ── Cuando la semana no tiene horario ───────────────────────────
+     Los de monto fijo cobran igual sin marcar, así que la tabla se
+     llena a medias y parece que el cálculo falló. Mejor decirlo. */
+  async function avisarSinHorario(){
+    const caja = $('pl-aviso');
+    if (!caja) return;
+    caja.style.display = '';
+    caja.innerHTML = `<div class="alert alert-warn">
+      Esta semana no tiene horario cargado, así que solo aparecen los de
+      monto fijo. Buscando dónde sí hay datos…</div>`;
+    try{
+      const ultima = await DB.horario.ultimaSemanaConHorario();
+      if (!ultima){
+        caja.innerHTML = `<div class="alert alert-warn">
+          Todavía no hay horario cargado en ninguna semana. Andá a
+          <strong>Horario</strong> y cargá el archivo del reloj o escribí las horas.</div>`;
+        return;
+      }
+      if (ultima === iso(lunes)){ caja.style.display = 'none'; return; }
+      caja.innerHTML = `<div class="alert alert-warn">
+        <span>Esta semana no tiene horario cargado — por eso solo ves a los de
+        monto fijo. La última con datos es la del
+        <strong>${App.fmtFecha(ultima)}</strong>.</span>
+        <button class="btn btn-s btn-xs" id="pl-ir-ultima"
+                style="margin-left:auto;white-space:nowrap">Ir a esa semana</button>
+      </div>`;
+      $('pl-ir-ultima').onclick = () => {
+        lunes = lunesDe(new Date(ultima + 'T12:00:00'));
+        calcular();
+      };
+    }catch(err){
+      caja.innerHTML = `<div class="alert alert-warn">
+        Esta semana no tiene horario cargado, así que solo aparecen los de
+        monto fijo.</div>`;
+    }
+  }
   let guardada   = false;
   let pestana    = 'calculo';
 
@@ -3192,7 +3285,13 @@ const Planilla = (() => {
         r.bruto > 0 || r.fijo > 0 || r.extras.length || r.rebajos.length);
 
       guardada = yaGuardada.length > 0;
+      sinHorario = jrs.length === 0;
       pintar();
+
+      // Sin horario, los únicos que aparecen son los de monto fijo, y
+      // la tabla queda a medias sin decir por qué. Conviene avisar y,
+      // de paso, decir dónde sí hay datos.
+      if (sinHorario) avisarSinHorario();
     }catch(err){
       $('pl-body').innerHTML = `<tr><td colspan="10" class="vacio">
         No se pudo calcular: ${esc(err.message)}</td></tr>`;
@@ -3338,6 +3437,7 @@ const Planilla = (() => {
     $('pl-estado').innerHTML = guardada
       ? '<span class="badge b-ok">guardada</span>'
       : '<span class="badge b-warn">sin guardar</span>';
+    if (!sinHorario && $('pl-aviso')) $('pl-aviso').style.display = 'none';
 
     if (pestana === 'calculo')        pintarCalculo();
     else if (pestana === 'transfer')  pintarTransferencias();
@@ -4880,7 +4980,7 @@ const Salon = (() => {
   const DIA_CORTO = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 
   let lunes    = lunesDe(new Date());
-  let empleados = [];
+  let empleados = [], plantilla = [];
   let bolsa    = [0,0,0,0,0,0,0];
   let filas    = [];      // { empleado_id, rol, valores[7], monto_ajustado, titular }
   let nota     = '';
@@ -4932,11 +5032,13 @@ const Salon = (() => {
     $('sal-body').innerHTML = '<tr><td colspan="12" class="vacio">Cargando…</td></tr>';
     try{
       const semana = iso(lunes);
-      const [emps, guardada] = await Promise.all([
+      const [emps, guardada, equipo] = await Promise.all([
         DB.empleados.listar(),
-        DB.salon.deSemana(semana)
+        DB.salon.deSemana(semana),
+        DB.salon.plantilla()
       ]);
       empleados = emps.filter(e => e.codigo_reloj !== 999);
+      plantilla = equipo;
 
       bolsa = guardada.cabecera?.bolsa
         ? guardada.cabecera.bolsa.map(nz) : [0,0,0,0,0,0,0];
@@ -4961,17 +5063,18 @@ const Salon = (() => {
     }
   }
 
+  // Una semana nueva arranca con el equipo fijo. Adivinar por el campo
+  // «departamento» fallaba por los dos lados: hay ayudantes de cocina
+  // que siempre entran, y gente de salón que esa semana no toca.
   function precargar(){
-    const deSalon = empleados.filter(e =>
-      (e.departamento || '').toLowerCase().includes('sal'));
-    filas = deSalon.map(e => ({
-      empleado_id: e.id, rol:'salonero', titular:false,
+    filas = plantilla.map(p => ({
+      empleado_id: p.empleado_id, rol: p.rol, titular:false,
       valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
-      nombre: e.nombre, codigo_reloj: e.codigo_reloj
+      nombre: p.nombre, codigo_reloj: p.codigo_reloj
     }));
     if (!filas.length){
-      toast('Nadie tiene «Salón» como departamento. Agregá a la gente con el botón.',
-            'warn', 6000);
+      toast('El equipo de salón está vacío. Agregá a la gente con los botones: ' +
+            'queda guardada y vuelve a salir todas las semanas.', 'warn', 7000);
     }
   }
 
@@ -5072,11 +5175,14 @@ const Salon = (() => {
       };
     });
     $('sal-body').querySelectorAll('[data-quitar]').forEach(b => {
-      b.onclick = () => { filas.splice(Number(b.dataset.quitar), 1); pintar(); };
+      b.onclick = () => quitar(Number(b.dataset.quitar));
     });
   }
 
-  /* ── Agregar gente ───────────────────────────────────────────── */
+  /* ── Agregar gente ───────────────────────────────────────────────
+     Por defecto entra al equipo fijo, que es lo que casi siempre se
+     quiere: si alguien ayuda en salón una vez, suele ayudar siempre.
+     La casilla permite el caso suelto sin ensuciar el equipo.     */
   function agregar(rol){
     const yaEstan = new Set(filas.map(f => f.empleado_id));
     const libres = empleados.filter(e => !yaEstan.has(e.id));
@@ -5086,34 +5192,155 @@ const Salon = (() => {
     const porDefecto = Number(cfg.monto_ayudante_default) || 5000;
 
     const m = modal({ titulo: rol === 'ayudante' ? 'Agregar ayudante' : 'Agregar salonero',
-      ancho:'460px', cuerpo:`
+      ancho:'470px', cuerpo:`
       <p class="ayuda" style="margin:0 0 .9rem">
         ${rol === 'ayudante'
-          ? `Se agrega solo a esta semana. Entra con ${fmtMon(porDefecto)} el día
-             que marqués; el monto se ajusta después en la tabla.`
-          : 'Se agrega solo a esta semana. Las horas se ponen en la tabla.'}
+          ? `En las filas de ayudante se escriben montos, no horas. Lo normal
+             son ${fmtMon(porDefecto)} por día, pero el número lo ponés vos.`
+          : 'En las filas de salonero se escriben las horas de cada día.'}
       </p>
       <div class="fg"><label>Persona</label>
         <select id="ag-emp" size="10" style="height:auto">
-          ${libres.map(e => `<option value="${e.id}">${e.codigo_reloj ?? '—'} · ${esc(e.nombre)}</option>`).join('')}
+          ${libres.map(e => `<option value="${e.id}">${e.codigo_reloj ?? '—'} · ${esc(e.nombre)}` +
+            `${e.departamento ? ' · ' + esc(e.departamento) : ''}</option>`).join('')}
         </select></div>
-      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+      <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:12px;
+                    background:var(--bg);padding:.7rem;border-radius:var(--rs);margin-top:.8rem">
+        <input type="checkbox" id="ag-fijo" checked style="margin-top:2px">
+        <span>Dejarlo en el equipo fijo
+          <span class="ayuda">Vuelve a salir solo todas las semanas. Sin esto,
+          entra nada más a la semana del ${corto(lunes)}.</span></span>
+      </label>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.2rem">
         <button class="btn btn-s" id="ag-x">Cancelar</button>
         <button class="btn btn-p" id="ag-ok">Agregar</button>
       </div>` });
 
     m.el.querySelector('#ag-x').onclick = m.cerrar;
-    m.el.querySelector('#ag-ok').onclick = () => {
+    m.el.querySelector('#ag-ok').onclick = async () => {
       const id = m.el.querySelector('#ag-emp').value;
       const e = empleados.find(x => x.id === id);
       if (!e) return;
+      const fijo = m.el.querySelector('#ag-fijo').checked;
+
       filas.push({ empleado_id:e.id, rol, titular:false,
         valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
         nombre:e.nombre, codigo_reloj:e.codigo_reloj });
+
+      if (fijo){
+        try{
+          await DB.salon.agregarAlEquipo(e.id, rol, e.codigo_reloj);
+          plantilla = await DB.salon.plantilla();
+          toast(e.nombre.split(' ')[0] + ' quedó en el equipo fijo', 'ok');
+        }catch(err){
+          toast('Se agregó a esta semana, pero no al equipo: ' + err.message, 'warn', 6000);
+        }
+      } else {
+        toast(e.nombre.split(' ')[0] + ' agregado solo a esta semana', 'ok');
+      }
       m.cerrar();
       pintar();
-      toast(e.nombre.split(' ')[0] + ' agregado a esta semana', 'ok');
     };
+  }
+
+  /* ── Quitar ──────────────────────────────────────────────────────
+     Dos cosas distintas que antes eran una sola: sacar a alguien de
+     esta semana porque no le tocó, y sacarlo del equipo porque ya no
+     trabaja acá.                                                   */
+  function quitar(i){
+    const f = filas[i];
+    const enEquipo = plantilla.some(p => p.empleado_id === f.empleado_id);
+    const nombre = (f.nombre || '').split(' ').slice(0,2).join(' ');
+
+    if (!enEquipo){ filas.splice(i,1); pintar(); return; }
+
+    const m = modal({ titulo:'Quitar a ' + esc(nombre), ancho:'460px', cuerpo:`
+      <p style="margin:0 0 1rem">¿Qué querés hacer?</p>
+      <div style="display:flex;flex-direction:column;gap:.6rem">
+        <button class="btn btn-s" id="q-semana" style="justify-content:flex-start;
+                text-align:left;height:auto;padding:.7rem .9rem">
+          <span><strong>Solo esta semana</strong>
+          <span class="ayuda" style="display:block">No le tocó esta vez. La semana
+          que viene vuelve a salir.</span></span></button>
+        <button class="btn btn-s" id="q-desactivar" style="justify-content:flex-start;
+                text-align:left;height:auto;padding:.7rem .9rem">
+          <span><strong>Sacarlo del equipo</strong>
+          <span class="ayuda" style="display:block">Renunció o cambió de puesto. Deja
+          de aparecer, pero se conserva lo que ya cobró.</span></span></button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:1.1rem">
+        <button class="btn btn-s" id="q-x">Cancelar</button>
+      </div>` });
+
+    m.el.querySelector('#q-x').onclick = m.cerrar;
+    m.el.querySelector('#q-semana').onclick = () => {
+      filas.splice(i,1); m.cerrar(); pintar();
+    };
+    m.el.querySelector('#q-desactivar').onclick = async () => {
+      try{
+        await DB.salon.cambiarEnEquipo(f.empleado_id, { activo:false });
+        plantilla = await DB.salon.plantilla();
+        filas.splice(i,1);
+        m.cerrar(); pintar();
+        toast(nombre + ' salió del equipo de salón', 'ok');
+      }catch(err){ toast(err.message, 'err', 5000); }
+    };
+  }
+
+  /* ── Ver y ordenar el equipo ─────────────────────────────────── */
+  async function verEquipo(){
+    const m = modal({ titulo:'Equipo fijo de salón', ancho:'620px',
+      cuerpo:'<div class="vacio">Cargando…</div>' });
+    try{
+      const todos = await DB.salon.plantilla({ soloActivos:false });
+      const cuerpo = m.el.querySelector('.modal-cuerpo');
+      if (!todos.length){
+        cuerpo.innerHTML = `<p class="ayuda">Todavía no hay nadie en el equipo.
+          Usá los botones de agregar y marcá «Dejarlo en el equipo fijo».</p>`;
+        return;
+      }
+      cuerpo.innerHTML = `
+        <p class="ayuda" style="margin:0 0 1rem">
+          Esta lista es la que se precarga todas las semanas.
+        </p>
+        <div class="tab-wrap"><table>
+          <thead><tr><th>ID</th><th>Persona</th><th>Rol</th><th></th></tr></thead>
+          <tbody>${todos.map(p => `<tr style="${p.activo ? '' : 'opacity:.5'}">
+            <td class="mono-sm">${p.codigo_reloj ?? '—'}</td>
+            <td style="font-size:12px">${esc(p.nombre)}
+              ${p.empleado_activo ? '' : '<span class="badge b-off">fuera de planilla</span>'}</td>
+            <td><select data-rol-eq="${p.empleado_id}" style="font-size:11px;padding:3px 6px">
+              <option value="salonero"${p.rol==='salonero'?' selected':''}>Salonero</option>
+              <option value="ayudante"${p.rol==='ayudante'?' selected':''}>Ayudante</option>
+            </select></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-s btn-xs" data-act-eq="${p.empleado_id}"
+                      data-a="${p.activo ? '0' : '1'}">${p.activo ? 'Desactivar' : 'Reactivar'}</button>
+              <button class="btn btn-d btn-xs" data-del-eq="${p.empleado_id}">✕</button>
+            </td></tr>`).join('')}</tbody>
+        </table></div>`;
+
+      const recargar = async () => {
+        plantilla = await DB.salon.plantilla();
+        m.cerrar(); verEquipo();
+      };
+      cuerpo.querySelectorAll('[data-rol-eq]').forEach(sel => sel.onchange = async () => {
+        await DB.salon.cambiarEnEquipo(sel.dataset.rolEq, { rol: sel.value });
+        toast('Rol cambiado', 'ok'); await recargar();
+      });
+      cuerpo.querySelectorAll('[data-act-eq]').forEach(b => b.onclick = async () => {
+        await DB.salon.cambiarEnEquipo(b.dataset.actEq, { activo: b.dataset.a === '1' });
+        await recargar();
+      });
+      cuerpo.querySelectorAll('[data-del-eq]').forEach(b => b.onclick = async () => {
+        if (!confirm('¿Borrarlo del equipo? Lo que ya cobró se conserva.')) return;
+        await DB.salon.sacarDelEquipo(b.dataset.delEq);
+        await recargar();
+      });
+    }catch(err){
+      m.el.querySelector('.modal-cuerpo').innerHTML =
+        `<div class="alert alert-err">${esc(err.message)}</div>`;
+    }
   }
 
   /* ── Guardar ─────────────────────────────────────────────────── */
@@ -5226,6 +5453,7 @@ const Salon = (() => {
     $('sal-sig').onclick = () => moverSemana(1);
     $('sal-hoy').onclick = () => { lunes = lunesDe(new Date()); cargar(); };
     $('sal-add-sal').onclick = () => agregar('salonero');
+    $('sal-equipo').onclick = verEquipo;
     $('sal-add-ayu').onclick = () => agregar('ayudante');
     $('sal-guardar').onclick = guardar;
     $('sal-comprobantes').onclick = comprobantes;
