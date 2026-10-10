@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-09
+  Armado el 2026-10-10
 -->
 <html lang="es">
 <head>
@@ -853,6 +853,7 @@ tbody tr:hover td{background:var(--bg)}
       <div class="subtabs">
         <button class="btn btn-p" id="hi-tab-semanas">Por semana</button>
         <button class="btn btn-s" id="hi-tab-meses">Por mes</button>
+        <button class="btn btn-s" id="hi-tab-reporte">Reporte mensual</button>
         <button class="btn btn-s" id="hi-tab-aguinaldo">Aguinaldo</button>
       </div>
 
@@ -892,6 +893,37 @@ tbody tr:hover td{background:var(--bg)}
               <tr><td colspan="6" class="vacio">Cargando…</td></tr>
             </tbody>
           </table></div>
+        </div>
+      </div>
+
+      <div id="hi-panel-reporte" style="display:none">
+        <div class="card">
+          <div class="abar" style="margin:0 0 1rem">
+            <select id="rp-mes" style="max-width:260px"></select>
+            <button class="btn btn-p" id="rp-ver">Ver reporte</button>
+            <button class="btn btn-s" id="rp-export" style="display:none">
+              Exportar a Excel</button>
+          </div>
+          <p class="ayuda" id="rp-meta" style="margin:0 0 1rem"></p>
+          <div class="tab-wrap"><table>
+            <thead id="rp-head"><tr>
+              <th>ID</th><th>Empleado</th>
+              <th style="text-align:right">Días</th>
+              <th style="text-align:right">Horas</th>
+              <th style="text-align:right">Bruto</th>
+              <th style="text-align:right">CCSS</th>
+              <th style="text-align:right">Neto</th>
+            </tr></thead>
+            <tbody id="rp-body">
+              <tr><td colspan="7" class="vacio">Elegí el mes y dale a Ver reporte</td></tr>
+            </tbody>
+            <tfoot id="rp-foot"></tfoot>
+          </table></div>
+          <p class="ayuda" style="margin-top:.8rem">
+            Los días trabajados salen del horario, no de la planilla: cuenta
+            cada día con entrada y salida. Si algún día quedó con una sola
+            marca aparece aparte en ámbar, porque ese día no se pagó.
+          </p>
         </div>
       </div>
 
@@ -1592,6 +1624,32 @@ const DB = (() => {
       return data;
     },
 
+    // Reporte de un mes: una fila por persona, con los montos, los
+    // días que de verdad trabajó y las horas de cada clase.
+    async reporteMes(anioMes){
+      const { data, error } = await cli.from('v_reporte_emp_mes')
+        .select('*').eq('anio_mes', anioMes)
+        .order('codigo_reloj', { ascending:true, nullsFirst:false });
+      if (error) throw error;
+      return data;
+    },
+
+    // Las semanas de ese mes, para las columnas
+    async reporteSemanas(anioMes){
+      const { data, error } = await cli.from('v_reporte_emp_semana')
+        .select('*').eq('anio_mes', anioMes).order('semana');
+      if (error) throw error;
+      return data;
+    },
+
+    // Los meses que tienen algo, para no ofrecer meses vacíos
+    async mesesDisponibles(){
+      const { data, error } = await cli.from('v_planilla_por_mes')
+        .select('anio_mes').order('anio_mes', { ascending:false });
+      if (error) throw error;
+      return (data || []).map(x => x.anio_mes);
+    },
+
     // Aguinaldo: bruto de diciembre del año anterior a noviembre de
     // este, dividido entre 12 (Ley 2412). Lo suma Postgres por mes.
     async aguinaldo(anio){
@@ -1698,9 +1756,11 @@ const DB = (() => {
       return data;
     },
 
-    async agregarAlEquipo(empleadoId, rol, orden){
+    async agregarAlEquipo(empleadoId, rol, orden, modo){
       const { error } = await cli.from('salon_plantilla').upsert({
-        empleado_id: empleadoId, rol, activo: true, orden: orden ?? null,
+        empleado_id: empleadoId, rol,
+        modo: modo || (rol === 'ayudante' ? 'monto' : 'horas'),
+        activo: true, orden: orden ?? null,
         actualizado_en: new Date().toISOString()
       }, { onConflict:'empleado_id' });
       if (error) throw error;
@@ -4298,8 +4358,13 @@ const Incapacidades = (() => {
     let bruto = 0, descanso = 0, rebajoCC = 0;
 
     if (tipo === 'incapacidad'){
-      // 4 h por día. No lleva CCSS ni descanso: es subsidio, no salario.
-      bruto = hBase * 4 * unidades;
+      // Art. 79 CT: el patrono cubre el 50 % del salario de los
+      // primeros TRES días; del cuarto en adelante la CCSS paga el
+      // 60 % directo a la persona y la empresa no pone nada.
+      // 4 h es la mitad de una jornada de 8. No lleva CCSS ni
+      // descanso: es subsidio, no salario.
+      const horasDia = Number(c.incapacidad_horas_dia) || 4;
+      bruto = hBase * horasDia * unidades;
 
     } else if (tipo === 'maternidad'){
       const hSem = 24;
@@ -4384,28 +4449,61 @@ const Incapacidades = (() => {
 
   // Para incapacidad: días naturales del rango.
   // Para maternidad y goce: semanas con un decimal.
+  // Devuelve lo que se paga Y lo que duró, que no son lo mismo.
   function unidadesDelRango(){
     const tipo = $('inc-tipo').value;
     const ini = $('inc-ini').value, fin = $('inc-fin').value;
-    if (!ini || !fin) return 0;
+    if (!ini || !fin) return { pagar:0, rango:0, topeAplicado:false };
     const a = new Date(ini + 'T12:00:00'), b = new Date(fin + 'T12:00:00');
-    if (a > b) return 0;
+    if (a > b) return { pagar:0, rango:0, topeAplicado:false };
     const dias = Math.round((b - a) / 86400000) + 1;
-    return tipo === 'incapacidad' ? dias : Math.round(dias / 7 * 10) / 10;
+
+    if (tipo !== 'incapacidad'){
+      const sem = Math.round(dias / 7 * 10) / 10;
+      return { pagar: sem, rango: sem, topeAplicado:false };
+    }
+    // El tope de los tres días del Art. 79
+    const c = App.estado.cfg.nomina || {};
+    const tope = Number(c.incapacidad_dias_patrono) || 3;
+    return { pagar: Math.min(dias, tope), rango: dias, topeAplicado: dias > tope };
+  }
+
+  // La incapacidad se paga en la semana donde empieza, aunque se
+  // estire a la siguiente: la fecha más vieja manda.
+  function semanaDeInicio(){
+    const ini = $('inc-ini').value;
+    if (!ini) return Planilla.semanaActual();
+    const d = new Date(ini + 'T12:00:00');
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.toISOString().split('T')[0];
   }
 
   function previsualizar(){
     const emp = empleados.find(e => e.id === $('inc-emp').value);
     const u   = unidadesDelRango();
     const tipo = $('inc-tipo').value;
-    $('inc-unidades').textContent = u
-      ? u + ' ' + (tipo === 'incapacidad' ? (u===1?'día':'días') : 'sem.')
-      : '—';
-    if (!emp || !u){ $('inc-preview').style.display = 'none'; return; }
+    const unidad = tipo === 'incapacidad' ? (u.pagar===1?'día':'días') : 'sem.';
 
-    const c = calcular(tipo, emp, u, $('inc-pct').value);
+    $('inc-unidades').innerHTML = u.pagar
+      ? `${u.pagar} ${unidad}` +
+        (u.topeAplicado ? ` <span class="ayuda">de ${u.rango} del rango</span>` : '')
+      : '—';
+    if (!emp || !u.pagar){ $('inc-preview').style.display = 'none'; return; }
+
+    const cfg = App.estado.cfg.nomina || {};
+    const tope = Number(cfg.incapacidad_dias_patrono) || 3;
+    const hDia = Number(cfg.incapacidad_horas_dia) || 4;
+    const c = calcular(tipo, emp, u.pagar, $('inc-pct').value);
+    const semana = semanaDeInicio();
+
     $('inc-preview').style.display = '';
     $('inc-preview').innerHTML = `
+      ${u.topeAplicado ? `<div class="alert alert-info" style="margin:0 0 .6rem">
+        La incapacidad dura <strong>${u.rango} días</strong>, pero el patrono
+        solo cubre los primeros <strong>${tope}</strong>. Del cuarto en adelante
+        la paga la Caja directo a la persona (Art. 79 CT).</div>` : ''}
+      <div class="resumen-linea"><span>Días que paga la empresa</span>
+        <strong>${u.pagar} de ${u.rango}</strong></div>
       <div class="resumen-linea"><span>Bruto</span><strong>${fmtMon(c.bruto)}</strong></div>
       ${c.descanso ? `<div class="resumen-linea"><span>Del cual descanso</span>
         <span>${fmtMon(c.descanso)}</span></div>` : ''}
@@ -4414,9 +4512,11 @@ const Incapacidades = (() => {
       <div class="resumen-linea" style="border-top:1px solid var(--border);padding-top:.4rem">
         <span>Neto a pagar</span>
         <strong style="color:var(--accent)">${fmtMon(c.neto)}</strong></div>
+      <div class="resumen-linea"><span>Entra en la planilla de</span>
+        <strong>${fmtFecha(semana)}</strong></div>
       ${tipo === 'incapacidad' ? `<p class="ayuda" style="margin:.6rem 0 0">
-        El patrono cubre 4 h por día. El resto lo paga la Caja directamente,
-        así que no lleva CCSS ni descanso.</p>` : ''}`;
+        El patrono cubre ${hDia} h por día —la mitad de la jornada— los primeros
+        ${tope} días. No lleva CCSS ni descanso: es subsidio, no salario.</p>` : ''}`;
   }
 
   async function guardar(){
@@ -4427,11 +4527,11 @@ const Incapacidades = (() => {
     if (!ini || !fin) return toast('Faltan las fechas', 'warn');
 
     const u = unidadesDelRango();
-    if (u < 0.1) return toast('El rango de fechas no es válido', 'warn');
+    if (u.pagar < 0.1) return toast('El rango de fechas no es válido', 'warn');
 
     const emp = empleados.find(e => e.id === empId);
     const pct = Number($('inc-pct').value) || 50;
-    const c   = calcular(tipo, emp, u, pct);
+    const c   = calcular(tipo, emp, u.pagar, pct);
     if (c.neto <= 0) return toast('El monto da ₡0 — revisá el salario del empleado', 'warn', 5000);
 
     const mes = new Date(ini + 'T12:00:00')
@@ -4444,19 +4544,23 @@ const Incapacidades = (() => {
         n_caso      : tipo === 'incapacidad' ? ($('inc-caso').value.trim() || null) : null,
         pct_goce    : tipo === 'goce' ? pct : null,
         fecha_inicio: ini, fecha_fin: fin,
-        dias_pagar  : u,
+        dias_pagar  : u.pagar,
         bruto       : c.bruto,
         monto_neto  : c.neto,
         rebajo_ccss : c.rebajoCC,
         pago        : emp.tipo_pago === 'transferencia' ? 'transferencia' : 'efectivo',
         mes,
-        semana_calculo: Planilla.semanaActual(),
+        // La fecha más vieja manda: si la incapacidad arranca un
+        // domingo y termina el jueves siguiente, se paga en la semana
+        // del domingo, no en la que esté abierta en pantalla.
+        semana_calculo: semanaDeInicio(),
         nota        : $('inc-nota').value.trim() || null
       });
-      toast(`${ETIQUETA[tipo]} registrada — ${fmtMon(c.neto)} neto`, 'ok');
+      toast(`${ETIQUETA[tipo]} registrada — ${fmtMon(c.neto)} neto · ` +
+            `planilla del ${fmtFecha(semanaDeInicio())}`, 'ok', 5000);
       ['inc-caso','inc-ini','inc-fin','inc-nota'].forEach(id => $(id).value = '');
       $('inc-preview').style.display = 'none';
-      $('inc-unidades').textContent = '—';
+      $('inc-unidades').innerHTML = '—';
       await cargar();
     }catch(err){
       toast('No se pudo registrar: ' + err.message, 'err', 6000);
@@ -4731,6 +4835,7 @@ const Historial = (() => {
 
   let semanas = [], meses = [], pestana = 'semanas';
   let aguinaldo = null;
+  let reporte = null;
 
   const MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic'];
   const etiquetaMes = am => {
@@ -4745,11 +4850,21 @@ const Historial = (() => {
         DB.historial.porMes()
       ]);
       llenarAnios();
+      llenarMesesReporte();
       pintar();
     }catch(err){
       $('hi-sem-body').innerHTML =
         `<tr><td colspan="8" class="vacio">No se pudo cargar: ${esc(err.message)}</td></tr>`;
     }
+  }
+
+  function llenarMesesReporte(){
+    const ops = meses.slice().sort((a,b) => b.anio_mes.localeCompare(a.anio_mes));
+    $('rp-mes').innerHTML = ops.length
+      ? ops.map((m,i) => `<option value="${m.anio_mes}"${i?'':' selected'}>` +
+          `${etiquetaMes(m.anio_mes)} · ${m.semanas} ${m.semanas==1?'semana':'semanas'}` +
+          `</option>`).join('')
+      : '<option value="">Sin meses calculados</option>';
   }
 
   function llenarAnios(){
@@ -4761,7 +4876,7 @@ const Historial = (() => {
   }
 
   function pintar(){
-    ['semanas','meses','aguinaldo'].forEach(p => {
+    ['semanas','meses','reporte','aguinaldo'].forEach(p => {
       $('hi-tab-'+p).className = 'btn ' + (pestana === p ? 'btn-p' : 'btn-s');
       $('hi-panel-'+p).style.display = pestana === p ? '' : 'none';
     });
@@ -4911,6 +5026,143 @@ const Historial = (() => {
     }
   }
 
+  /* ── Reporte mensual por empleado ────────────────────────────────
+     Lo que la CCSS pide y lo que hace falta para revisar el mes:
+     cada persona con su bruto, su CCSS, su neto, los días que de
+     verdad trabajó y las horas. Las semanas van en columnas, como
+     en la hoja de antes.                                          */
+  async function verReporte(){
+    const am = $('rp-mes').value;
+    if (!am) return toast('No hay meses con planilla calculada', 'warn');
+    $('rp-body').innerHTML = '<tr><td colspan="9" class="vacio">Cargando…</td></tr>';
+    try{
+      const [filas, sems] = await Promise.all([
+        DB.historial.reporteMes(am),
+        DB.historial.reporteSemanas(am)
+      ]);
+      const semanasMes = [...new Set(sems.map(s => s.semana))].sort();
+      const porEmpSem = {};
+      sems.forEach(s => { porEmpSem[s.empleado_id + '|' + s.semana] = s; });
+
+      const gente = filas.filter(f => f.codigo_reloj !== 999 &&
+        (Number(f.bruto) > 0 || Number(f.dias_trabajados) > 0));
+      reporte = { am, semanasMes, gente, porEmpSem };
+
+      if (!gente.length){
+        $('rp-body').innerHTML =
+          `<tr><td colspan="9" class="vacio">Sin datos en ${etiquetaMes(am)}</td></tr>`;
+        $('rp-export').style.display = 'none';
+        return;
+      }
+      pintarReporte();
+      $('rp-export').style.display = '';
+    }catch(err){
+      $('rp-body').innerHTML =
+        `<tr><td colspan="9" class="vacio">No se pudo cargar: ${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  function pintarReporte(){
+    const { am, semanasMes, gente, porEmpSem } = reporte;
+    const fin = s => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate()+6);
+                       return d.toISOString().split('T')[0]; };
+
+    $('rp-head').innerHTML = `<tr>
+      <th>ID</th><th>Empleado</th>
+      ${semanasMes.map(s => `<th class="num" style="font-size:9px;line-height:1.3">
+        ${fmtFecha(s).replace(/ de \d+$/,'')}<br>
+        <span style="font-weight:400;color:var(--text3)">al ${
+          fmtFecha(fin(s)).replace(/ de \d+$/,'')}</span></th>`).join('')}
+      <th class="num">Días</th><th class="num">Horas</th>
+      <th class="num">Bruto</th><th class="num">CCSS</th><th class="num">Neto</th>
+    </tr>`;
+
+    $('rp-body').innerHTML = gente.map(f => `<tr>
+      <td class="mono-sm">${f.codigo_reloj ?? '—'}</td>
+      <td style="font-size:12px;font-weight:500">${esc(f.nombre)}
+        ${f.cotiza_ccss ? '' : '<span class="badge b-off">sin CCSS</span>'}</td>
+      ${semanasMes.map(s => {
+        const x = porEmpSem[f.empleado_id + '|' + s];
+        return `<td class="num" style="font-size:11px">${
+          x && Number(x.bruto) ? fmtMon(x.bruto) : '—'}</td>`;
+      }).join('')}
+      <td class="num">${f.dias_trabajados || '—'}${
+        Number(f.dias_incompletos) ? `<span class="ayuda" title="días con una sola marca"
+          style="color:var(--warn)"> +${f.dias_incompletos}</span>` : ''}</td>
+      <td class="num">${Number(f.horas_totales).toFixed(1)}</td>
+      <td class="num" style="font-weight:600">${fmtMon(f.bruto)}</td>
+      <td class="num" style="color:var(--danger)">${Number(f.ccss) ? '−'+fmtMon(f.ccss) : '₡0'}</td>
+      <td class="num" style="font-weight:600;color:var(--accent)">${fmtMon(f.neto)}</td>
+    </tr>`).join('');
+
+    const t = gente.reduce((a,f) => ({
+      dias : a.dias  + Number(f.dias_trabajados),
+      horas: a.horas + Number(f.horas_totales),
+      bruto: a.bruto + Number(f.bruto),
+      ccss : a.ccss  + Number(f.ccss),
+      neto : a.neto  + Number(f.neto)
+    }), { dias:0, horas:0, bruto:0, ccss:0, neto:0 });
+
+    $('rp-foot').innerHTML = `<tr style="border-top:2px solid var(--border2);font-weight:700">
+      <td colspan="2">TOTAL · ${gente.length} personas</td>
+      ${semanasMes.map(s => `<td class="num" style="font-size:11px">${
+        fmtMon(gente.reduce((a,f) => a +
+          Number(porEmpSem[f.empleado_id + '|' + s]?.bruto || 0), 0))}</td>`).join('')}
+      <td class="num">${t.dias}</td>
+      <td class="num">${t.horas.toFixed(0)}</td>
+      <td class="num">${fmtMon(t.bruto)}</td>
+      <td class="num" style="color:var(--danger)">−${fmtMon(t.ccss)}</td>
+      <td class="num" style="color:var(--accent)">${fmtMon(t.neto)}</td>
+    </tr>`;
+
+    $('rp-meta').innerHTML = `${etiquetaMes(am)} · ${semanasMes.length} ` +
+      `${semanasMes.length===1?'semana':'semanas'} · ${gente.length} personas · ` +
+      `${t.dias} días trabajados · ${t.horas.toFixed(0)} horas · ` +
+      `bruto <strong>${fmtMon(t.bruto)}</strong> · CCSS ` +
+      `<strong style="color:var(--danger)">${fmtMon(t.ccss)}</strong>`;
+  }
+
+  function exportarReporte(){
+    if (!reporte) return;
+    const { am, semanasMes, gente, porEmpSem } = reporte;
+    const empresa = App.estado.cfg.empresa || {};
+    const encab = ['ID','Empleado','Cédula','Puesto','Cotiza CCSS',
+      ...semanasMes.map(s => 'Semana ' + s),
+      'Días trabajados','Horas ordinarias','Horas extra','Horas dobles',
+      'Horas totales','Bruto','CCSS','Neto'];
+
+    const filas = gente.map(f => [
+      f.codigo_reloj ?? '', f.nombre, f.cedula || '', f.puesto || '',
+      f.cotiza_ccss ? 'Sí' : 'No',
+      ...semanasMes.map(s => Math.round(Number(porEmpSem[f.empleado_id+'|'+s]?.bruto || 0))),
+      Number(f.dias_trabajados),
+      Number(f.horas_normales), Number(f.horas_extra), Number(f.horas_dobles),
+      Number(f.horas_totales),
+      Math.round(Number(f.bruto)), Math.round(Number(f.ccss)), Math.round(Number(f.neto))
+    ]);
+
+    const suma = i => filas.reduce((a,f) => a + (Number(f[i]) || 0), 0);
+    const total = ['', 'TOTAL', '', '', '',
+      ...semanasMes.map((_,k) => suma(5+k)),
+      suma(5+semanasMes.length), suma(6+semanasMes.length), suma(7+semanasMes.length),
+      suma(8+semanasMes.length), suma(9+semanasMes.length),
+      suma(10+semanasMes.length), suma(11+semanasMes.length), suma(12+semanasMes.length)];
+
+    const hoja = XLSX.utils.aoa_to_sheet([
+      ['REPORTE MENSUAL DE PLANILLA — ' + (empresa.razon_social || 'PROFECHA S.A.')],
+      [etiquetaMes(am)],
+      ['Generado el ' + new Date().toLocaleDateString('es-CR',
+        { day:'2-digit', month:'long', year:'numeric' })],
+      [], encab, ...filas, total
+    ]);
+    hoja['!cols'] = [{wch:6},{wch:32},{wch:13},{wch:18},{wch:11},
+      ...semanasMes.map(() => ({wch:14})), ...Array(8).fill({wch:13})];
+    const libro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, hoja, etiquetaMes(am).replace(/[^\w ]/g,''));
+    XLSX.writeFile(libro, 'Reporte_' + am + '_Profecha.xlsx');
+    toast('Excel generado', 'ok');
+  }
+
   function exportarAguinaldo(){
     if (!aguinaldo) return;
     const { anio, mesesPeriodo, emps } = aguinaldo;
@@ -4941,8 +5193,10 @@ const Historial = (() => {
 
   function registrarModulo(){
     App.registrarPagina('historial', cargar);
-    ['semanas','meses','aguinaldo'].forEach(p =>
+    ['semanas','meses','reporte','aguinaldo'].forEach(p =>
       $('hi-tab-'+p).onclick = () => { pestana = p; pintar(); });
+    $('rp-ver').onclick = verReporte;
+    $('rp-export').onclick = exportarReporte;
     $('ag-calcular').onclick = calcularAguinaldo;
     $('ag-export').onclick = exportarAguinaldo;
   }
@@ -4999,14 +5253,19 @@ const Salon = (() => {
   const nz = v => Number(v) || 0;
 
   /* ── El cálculo ──────────────────────────────────────────────── */
+  // Lo que decide el cálculo es el MODO de pago, no el rol. Un
+  // ayudante puede cobrar por hora igual que un salonero: entonces
+  // sus horas entran al reparto como cualquier otra.
+  const porHoras = f => (f.modo || (f.rol === 'ayudante' ? 'monto' : 'horas')) === 'horas';
+
   function tasas(){
     return bolsa.map((b, d) => {
-      const horas = filas.filter(f => f.rol === 'salonero')
+      const horas = filas.filter(porHoras)
                          .reduce((s,f) => s + nz(f.valores[d]), 0);
-      const ayud  = filas.filter(f => f.rol === 'ayudante')
+      const fijos = filas.filter(f => !porHoras(f))
                          .reduce((s,f) => s + nz(f.valores[d]), 0);
-      const reparte = nz(b) - ayud;
-      return { bolsa:nz(b), ayudantes:ayud, reparte, horas,
+      const reparte = nz(b) - fijos;
+      return { bolsa:nz(b), ayudantes:fijos, reparte, horas,
                porHora: horas > 0 ? reparte / horas : 0 };
     });
   }
@@ -5014,7 +5273,7 @@ const Salon = (() => {
   function calcular(){
     const t = tasas();
     filas.forEach(f => {
-      f.monto_calculado = f.rol === 'salonero'
+      f.monto_calculado = porHoras(f)
         ? f.valores.reduce((s,h,d) => s + nz(h) * t[d].porHora, 0)
         : f.valores.reduce((s,m) => s + nz(m), 0);
       f.monto_calculado = Math.round(f.monto_calculado * 100) / 100;
@@ -5046,7 +5305,9 @@ const Salon = (() => {
       guardado = !!guardada.cabecera;
 
       filas = (guardada.detalle || []).map(d => ({
-        empleado_id: d.empleado_id, rol: d.rol, titular: d.titular,
+        empleado_id: d.empleado_id, rol: d.rol,
+        modo: d.modo || (d.rol === 'ayudante' ? 'monto' : 'horas'),
+        titular: d.titular,
         valores: (d.valores || []).map(nz).concat([0,0,0,0,0,0,0]).slice(0,7),
         monto_calculado: nz(d.monto_calculado),
         monto_ajustado : d.monto_ajustado == null ? '' : nz(d.monto_ajustado),
@@ -5068,7 +5329,9 @@ const Salon = (() => {
   // que siempre entran, y gente de salón que esa semana no toca.
   function precargar(){
     filas = plantilla.map(p => ({
-      empleado_id: p.empleado_id, rol: p.rol, titular:false,
+      empleado_id: p.empleado_id, rol: p.rol,
+      modo: p.modo || (p.rol === 'ayudante' ? 'monto' : 'horas'),
+      titular:false,
       valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
       nombre: p.nombre, codigo_reloj: p.codigo_reloj
     }));
@@ -5106,15 +5369,22 @@ const Salon = (() => {
     $('sal-body').innerHTML = orden.length ? orden.map(f => {
       const idx = filas.indexOf(f);
       const esSal = f.rol === 'salonero';
+      const hrs = porHoras(f);
       return `<tr>
         <td class="mono-sm">${f.codigo_reloj ?? '—'}</td>
         <td><div style="font-weight:500;font-size:12px">${esc((f.nombre||'').split(' ').slice(0,3).join(' '))}</div>
-            <span class="badge ${esSal?'b-tr':'b-ef'}" data-rol="${idx}"
-                  style="cursor:pointer" title="Cambiar a ${esSal?'ayudante':'salonero'}">
-              ${esSal ? 'Salonero' : 'Ayudante'}</span></td>
+            <div style="display:flex;gap:3px;margin-top:2px;flex-wrap:wrap">
+              <span class="badge ${esSal?'b-tr':'b-ef'}" data-rol="${idx}"
+                    style="cursor:pointer" title="Cambiar a ${esSal?'ayudante':'salonero'}">
+                ${esSal ? 'Salonero' : 'Ayudante'}</span>
+              <span class="badge ${hrs?'b-ok':'b-warn'}" data-modo="${idx}"
+                    style="cursor:pointer"
+                    title="Cambiar a ${hrs?'monto fijo':'pago por horas'}">
+                ${hrs ? 'por horas' : 'monto fijo'}</span>
+            </div></td>
         ${f.valores.map((v,d) => `<td style="padding:3px">
-          <input type="number" step="${esSal?'0.5':'500'}" value="${v || ''}"
-                 data-val="${idx}" data-dia="${d}" placeholder="${esSal?'h':'₡'}"
+          <input type="number" step="${hrs?'0.5':'500'}" value="${v || ''}"
+                 data-val="${idx}" data-dia="${d}" placeholder="${hrs?'h':'₡'}"
                  class="hora-inp" style="width:100%;text-align:right"></td>`).join('')}
         <td class="num" style="color:var(--text3)">${f.monto_calculado ? fmtMon(f.monto_calculado) : '—'}</td>
         <td style="padding:3px"><input type="number" step="500" data-aj="${idx}"
@@ -5165,18 +5435,47 @@ const Salon = (() => {
         pintar();
       };
     });
+    // El rol es solo una etiqueta: no toca el cálculo ni los valores.
     $('sal-body').querySelectorAll('[data-rol]').forEach(b => {
-      b.onclick = () => {
+      b.onclick = async () => {
         const f = filas[Number(b.dataset.rol)];
         f.rol = f.rol === 'salonero' ? 'ayudante' : 'salonero';
-        // Al cambiar de rol los valores significan otra cosa
-        f.valores = [0,0,0,0,0,0,0];
         pintar();
+        await guardarEnEquipo(f, { rol: f.rol });
+      };
+    });
+
+    // El modo sí: lo que hay escrito pasa a significar otra cosa.
+    $('sal-body').querySelectorAll('[data-modo]').forEach(b => {
+      b.onclick = async () => {
+        const f = filas[Number(b.dataset.modo)];
+        const tenia = f.valores.some(v => nz(v));
+        if (tenia && !confirm(
+            'Al cambiar de modo, lo que está escrito pasa a significar otra cosa: ' +
+            (porHoras(f) ? 'horas → montos' : 'montos → horas') + '.\n\n' +
+            '¿Borrar los valores de esta semana?')) return;
+        f.modo = porHoras(f) ? 'monto' : 'horas';
+        if (tenia) f.valores = [0,0,0,0,0,0,0];
+        pintar();
+        await guardarEnEquipo(f, { modo: f.modo });
       };
     });
     $('sal-body').querySelectorAll('[data-quitar]').forEach(b => {
       b.onclick = () => quitar(Number(b.dataset.quitar));
     });
+  }
+
+  // Si la persona está en el equipo fijo, el cambio se guarda ahí
+  // también: de otro modo habría que repetirlo todas las semanas.
+  async function guardarEnEquipo(f, cambios){
+    if (!plantilla.some(p => p.empleado_id === f.empleado_id)) return;
+    try{
+      await DB.salon.cambiarEnEquipo(f.empleado_id, cambios);
+      plantilla = await DB.salon.plantilla();
+    }catch(err){
+      toast('Se cambió en esta semana, pero no en el equipo: ' + err.message,
+            'warn', 6000);
+    }
   }
 
   /* ── Agregar gente ───────────────────────────────────────────────
@@ -5204,6 +5503,11 @@ const Salon = (() => {
           ${libres.map(e => `<option value="${e.id}">${e.codigo_reloj ?? '—'} · ${esc(e.nombre)}` +
             `${e.departamento ? ' · ' + esc(e.departamento) : ''}</option>`).join('')}
         </select></div>
+      <div class="fg" style="margin-top:.8rem"><label>Cómo se le paga</label>
+        <select id="ag-modo">
+          <option value="horas"${rol === 'salonero' ? ' selected' : ''}>Por horas — entra al reparto de la bolsa</option>
+          <option value="monto"${rol === 'ayudante' ? ' selected' : ''}>Monto fijo — sale de la bolsa antes de repartir</option>
+        </select></div>
       <label style="display:flex;gap:.5rem;align-items:flex-start;font-size:12px;
                     background:var(--bg);padding:.7rem;border-radius:var(--rs);margin-top:.8rem">
         <input type="checkbox" id="ag-fijo" checked style="margin-top:2px">
@@ -5222,14 +5526,15 @@ const Salon = (() => {
       const e = empleados.find(x => x.id === id);
       if (!e) return;
       const fijo = m.el.querySelector('#ag-fijo').checked;
+      const modo = m.el.querySelector('#ag-modo').value;
 
-      filas.push({ empleado_id:e.id, rol, titular:false,
+      filas.push({ empleado_id:e.id, rol, modo, titular:false,
         valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
         nombre:e.nombre, codigo_reloj:e.codigo_reloj });
 
       if (fijo){
         try{
-          await DB.salon.agregarAlEquipo(e.id, rol, e.codigo_reloj);
+          await DB.salon.agregarAlEquipo(e.id, rol, e.codigo_reloj, modo);
           plantilla = await DB.salon.plantilla();
           toast(e.nombre.split(' ')[0] + ' quedó en el equipo fijo', 'ok');
         }catch(err){
@@ -5304,7 +5609,7 @@ const Salon = (() => {
           Esta lista es la que se precarga todas las semanas.
         </p>
         <div class="tab-wrap"><table>
-          <thead><tr><th>ID</th><th>Persona</th><th>Rol</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Persona</th><th>Rol</th><th>Pago</th><th></th></tr></thead>
           <tbody>${todos.map(p => `<tr style="${p.activo ? '' : 'opacity:.5'}">
             <td class="mono-sm">${p.codigo_reloj ?? '—'}</td>
             <td style="font-size:12px">${esc(p.nombre)}
@@ -5312,6 +5617,10 @@ const Salon = (() => {
             <td><select data-rol-eq="${p.empleado_id}" style="font-size:11px;padding:3px 6px">
               <option value="salonero"${p.rol==='salonero'?' selected':''}>Salonero</option>
               <option value="ayudante"${p.rol==='ayudante'?' selected':''}>Ayudante</option>
+            </select></td>
+            <td><select data-modo-eq="${p.empleado_id}" style="font-size:11px;padding:3px 6px">
+              <option value="horas"${(p.modo||'horas')==='horas'?' selected':''}>Por horas</option>
+              <option value="monto"${p.modo==='monto'?' selected':''}>Monto fijo</option>
             </select></td>
             <td style="display:flex;gap:4px">
               <button class="btn btn-s btn-xs" data-act-eq="${p.empleado_id}"
@@ -5327,6 +5636,10 @@ const Salon = (() => {
       cuerpo.querySelectorAll('[data-rol-eq]').forEach(sel => sel.onchange = async () => {
         await DB.salon.cambiarEnEquipo(sel.dataset.rolEq, { rol: sel.value });
         toast('Rol cambiado', 'ok'); await recargar();
+      });
+      cuerpo.querySelectorAll('[data-modo-eq]').forEach(sel => sel.onchange = async () => {
+        await DB.salon.cambiarEnEquipo(sel.dataset.modoEq, { modo: sel.value });
+        toast('Modo de pago cambiado', 'ok'); await recargar();
       });
       cuerpo.querySelectorAll('[data-act-eq]').forEach(b => b.onclick = async () => {
         await DB.salon.cambiarEnEquipo(b.dataset.actEq, { activo: b.dataset.a === '1' });
@@ -5352,7 +5665,8 @@ const Salon = (() => {
     try{
       await DB.salon.guardar(iso(lunes), bolsa, $('sal-nota').value.trim(),
         filas.map(f => ({
-          empleado_id: f.empleado_id, rol: f.rol, titular: f.titular,
+          empleado_id: f.empleado_id, rol: f.rol, modo: f.modo || 'horas',
+          titular: f.titular,
           valores: f.valores.map(nz),
           monto_calculado: nz(f.monto_calculado),
           monto_ajustado: f.monto_ajustado === '' ? null : nz(f.monto_ajustado)
