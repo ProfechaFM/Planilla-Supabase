@@ -5682,81 +5682,174 @@ const Salon = (() => {
     }
   }
 
-  /* ── Comprobantes ────────────────────────────────────────────── */
+  /* ── Comprobantes ────────────────────────────────────────────────
+     Dos columnas, como la hoja que se venía usando: a la izquierda
+     lo que entró cada día —igual para todos, es la bolsa del
+     restaurante— y a la derecha lo que le toca a esa persona.
+
+     El panel de la izquierda es lo que hace legible el monto: sin él
+     el número de la derecha sale de la nada.                       */
+
+  const DIA_SEM = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  function panelBolsa(periodo){
+    const total = bolsa.reduce((s,b) => s + nz(b), 0);
+    const filas = bolsa.map((b,d) => {
+      if (!nz(b)) return '';
+      const f = masDias(lunes, d);
+      return `<tr>
+        <td class="dia">${DIA_SEM[d]} ${f.getDate()}/${f.getMonth()+1}</td>
+        <td class="m">${fmtMon(b)}</td></tr>`;
+    }).join('');
+    return `<div class="bolsa">
+      <div class="bolsa-tit">Servicio al cliente</div>
+      <div class="bolsa-per">${periodo}</div>
+      <table>${filas}
+        <tr class="tot"><td>Total</td><td class="m">${fmtMon(total)}</td></tr>
+      </table>
+    </div>`;
+  }
+
+  function unComprobanteSalon(f, t, periodo){
+    const emp = App.estado.cfg.empresa || {};
+    const hrs = porHoras(f);
+    const detalle = f.valores.map((v,d) => {
+      if (!nz(v)) return '';
+      const monto = hrs ? nz(v) * t[d].porHora : nz(v);
+      return `<tr>
+        <td>${DIA_SEM[d]}</td>
+        <td class="h">${hrs ? nz(v) + ' h' : ''}</td>
+        <td class="m">${fmtMon(monto)}</td></tr>`;
+    }).join('');
+
+    return `<div class="comp">
+      ${panelBolsa(periodo)}
+      <div class="lado">
+        <div class="cab">
+          ${emp.logo ? `<img class="logo" src="${esc(emp.logo)}" alt="">` : ''}
+          <div>
+            <div class="emp">${esc(emp.razon_social || 'PROFECHA S.A.')}${
+              emp.nombre_comercial ? ' — ' + esc(emp.nombre_comercial) : ''}</div>
+            <div class="tit">10 % Departamento de Salón</div>
+            <div class="per">${periodo}</div>
+          </div>
+        </div>
+
+        <div class="nombre">${esc(f.nombre || '')}</div>
+        <div class="meta">${f.codigo_reloj != null ? 'ID ' + f.codigo_reloj + ' · ' : ''}${
+          f.rol === 'salonero' ? 'Salonero' : 'Ayudante'} · ${
+          hrs ? 'pago por horas' : 'monto fijo'}</div>
+
+        ${detalle ? `<table class="det">
+          <tr><th>Día</th><th class="h">${hrs ? 'Horas' : ''}</th>
+              <th class="m">Monto</th></tr>
+          ${detalle}
+        </table>` : ''}
+
+        <div class="neto">
+          <span>Salario neto a pagar</span>
+          <strong>${fmtMon(montoFinal(f))}</strong>
+        </div>
+
+        <div class="firmas">
+          <div><span>Cédula</span><i></i></div>
+          <div><span>Firma de recibido</span><i></i></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   function comprobantes(){
     if (!filas.length) return toast('No hay nada que imprimir', 'warn');
-    calcular();
-    const empresa = App.estado.cfg.empresa || {};
-    const t = tasas();
+    const t = calcular();
     const fin = masDias(lunes,6);
     const periodo = `${corto(lunes)} al ${corto(fin)} de ${fin.getFullYear()}`;
 
-    const bloques = filas
+    const lista = filas
       .filter(f => montoFinal(f) > 0)
-      .sort((a,b) => (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999))
-      .map(f => {
-        const esSal = f.rol === 'salonero';
-        const lineas = f.valores.map((v,d) => {
-          if (!nz(v)) return '';
-          return `<tr><td>${DIAS[d]}</td>
-            <td style="text-align:right">${esSal ? v + ' h' : ''}</td>
-            <td style="text-align:right">${esSal
-              ? fmtMon(nz(v) * t[d].porHora) : fmtMon(nz(v))}</td></tr>`;
-        }).join('');
-        const ajustado = f.monto_ajustado !== '' &&
-                         Math.abs(nz(f.monto_ajustado) - nz(f.monto_calculado)) >= 1;
-        return `<div class="comp">
-          <div class="comp-h">${esc(empresa.razon_social || 'PROFECHA S.A.')}</div>
-          <div class="comp-h2">PAGO 10 % DE SERVICIO — SALÓN</div>
-          <div class="comp-h3">Semana del ${periodo}</div>
-          <div class="comp-emp"><span class="lbl">EMPLEADO:</span>
-            <span class="val">${esc(f.nombre)}</span></div>
-          <table class="det">
-            <tr><th>Día</th><th style="text-align:right">${esSal?'Horas':''}</th>
-                <th style="text-align:right">Monto</th></tr>
-            ${lineas}
-            ${ajustado ? `<tr class="sub"><td colspan="2">Subtotal calculado</td>
-              <td style="text-align:right">${fmtMon(f.monto_calculado)}</td></tr>` : ''}
-            <tr class="tot"><td colspan="2">TOTAL A RECIBIR</td>
-                <td style="text-align:right">${fmtMon(montoFinal(f))}</td></tr>
-          </table>
-          <div class="comp-firmas">
-            <div class="comp-firma">Recibí conforme</div>
-            <div class="comp-firma">Entregó</div>
-          </div>
-        </div>`;
-      }).join('');
+      .sort((a,b) => (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999));
+    if (!lista.length) return toast('Todavía no hay montos que repartir', 'warn');
+
+    const total = lista.reduce((s,f) => s + montoFinal(f), 0);
+    const emp = App.estado.cfg.empresa || {};
+
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>10 % de salón — ${periodo}</title>
+<style>
+  @page { size:letter; margin:1.1cm }
+  *{ box-sizing:border-box }
+  body{ font:11px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
+        color:#1a1917; margin:0; padding:1rem; background:#e9e7e2 }
+  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.6cm }
+
+  .comp{ display:grid; grid-template-columns:5.4cm 1fr; gap:0;
+         border:1px solid #c9c6c0; border-radius:5px; overflow:hidden;
+         margin-bottom:9px; page-break-inside:avoid }
+
+  /* ── Lo que entró cada día ── */
+  .bolsa{ background:#f6f5f2; border-right:1px solid #c9c6c0; padding:9px 11px }
+  .bolsa-tit{ font-size:9.5px; font-weight:700; text-transform:uppercase;
+              letter-spacing:.5px; color:#2d5a3d }
+  .bolsa-per{ font-size:8.5px; color:#777; margin-bottom:6px }
+  .bolsa table{ width:100%; border-collapse:collapse; font-size:10px }
+  .bolsa td{ padding:2px 0; border-bottom:1px solid #e6e3dd }
+  .bolsa .dia{ color:#555 }
+  .bolsa .m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace }
+  .bolsa .tot td{ font-weight:700; border-top:1px solid #999;
+                  border-bottom:none; padding-top:4px; color:#2d5a3d }
+
+  /* ── Lo de la persona ── */
+  .lado{ padding:9px 12px; display:flex; flex-direction:column }
+  .cab{ display:flex; gap:9px; align-items:flex-start;
+        border-bottom:1px solid #e6e3dd; padding-bottom:6px }
+  .cab .logo{ width:40px; height:40px; object-fit:contain; flex-shrink:0 }
+  .emp{ font-size:9.5px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.3px }
+  .tit{ font-size:12px; font-weight:600; color:#2d5a3d; margin-top:1px }
+  .per{ font-size:9px; color:#777 }
+  .nombre{ font-size:15px; font-weight:700; margin-top:7px }
+  .meta{ font-size:9px; color:#777; margin-bottom:6px }
+  .det{ width:100%; border-collapse:collapse; font-size:10px }
+  .det th{ text-align:left; font-size:8.5px; text-transform:uppercase;
+           letter-spacing:.4px; color:#999; font-weight:600;
+           border-bottom:1px solid #ddd; padding-bottom:2px }
+  .det td{ padding:2px 0; border-bottom:1px solid #f2f0ec }
+  .det .h{ text-align:right; width:52px; color:#666 }
+  .det .m{ text-align:right; width:80px;
+           font-family:'DM Mono',ui-monospace,monospace }
+  .neto{ margin-top:auto; padding-top:8px; display:flex; align-items:baseline;
+         justify-content:space-between; gap:10px; border-top:2px solid #2d5a3d }
+  .neto span{ font-size:10px; font-weight:600; text-transform:uppercase;
+              letter-spacing:.5px }
+  .neto strong{ font-size:17px; font-family:'DM Mono',ui-monospace,monospace }
+  .firmas{ display:flex; gap:18px; margin-top:16px }
+  .firmas div{ flex:1 }
+  .firmas span{ display:block; font-size:8.5px; color:#888; margin-bottom:11px }
+  .firmas i{ display:block; border-bottom:1px solid #555; height:1px }
+
+  .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
+          padding:.7rem 1.1rem; border-radius:6px; display:flex; gap:1rem;
+          align-items:center; font-size:13px }
+  .barra button{ font:inherit; background:rgba(255,255,255,.15); color:#fff;
+                 border:1px solid rgba(255,255,255,.4); padding:6px 16px;
+                 border-radius:5px; cursor:pointer }
+  @media print{
+    body{ background:#fff; padding:0 }
+    .barra{ display:none }
+    .hoja{ width:auto; margin:0; padding:0 }
+  }
+</style></head><body>
+<div class="barra">
+  <span>10 % de salón · ${periodo} · ${lista.length} ${
+    lista.length === 1 ? 'persona' : 'personas'} · ${fmtMon(total)}</span>
+  <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
+</div>
+<div class="hoja">${lista.map(f => unComprobanteSalon(f, t, periodo)).join('')}</div>
+</body></html>`;
 
     const w = window.open('', '_blank');
     if (!w) return toast('El navegador bloqueó la ventana', 'warn', 5000);
-    w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8">
-      <title>10 % de salón — ${periodo}</title><style>
-      body{font:12px/1.5 'Courier New',monospace;margin:0;padding:1rem;background:#eee}
-      .hoja{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:1000px;margin:0 auto}
-      .comp{background:#fff;border:1px dashed #999;padding:14px;page-break-inside:avoid}
-      .comp-h{text-align:center;font-weight:700;font-size:11px}
-      .comp-h2{text-align:center;font-size:10px;margin:2px 0}
-      .comp-h3{text-align:center;font-size:10px;color:#555;margin-bottom:8px}
-      .comp-emp{display:flex;gap:6px;font-size:11px;margin-bottom:6px}
-      .comp-emp .lbl{color:#666}.comp-emp .val{font-weight:700}
-      .det{width:100%;border-collapse:collapse;font-size:11px}
-      .det th{border-bottom:1px solid #333;text-align:left;padding:3px 0;font-size:10px}
-      .det td{padding:3px 0}
-      .det .sub td{border-top:1px solid #ccc;color:#666}
-      .det .tot td{border-top:1px solid #333;font-weight:700;padding-top:5px}
-      .comp-firmas{display:flex;gap:14px;margin-top:22px}
-      .comp-firma{flex:1;border-top:1px solid #333;padding-top:3px;font-size:9px;text-align:center}
-      .barra{max-width:1000px;margin:0 auto 1rem;background:#2d5a3d;color:#fff;
-             padding:.6rem 1rem;border-radius:6px;display:flex;gap:1rem;align-items:center}
-      @media print{.barra{display:none}body{background:#fff;padding:0}
-        .hoja{gap:0}.comp{border:1px dashed #bbb}}
-      </style></head><body>
-      <div class="barra"><span>10 % de salón · ${periodo}</span>
-        <button onclick="window.print()" style="margin-left:auto;font:inherit;
-          background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);
-          padding:6px 14px;border-radius:5px;cursor:pointer">Imprimir</button></div>
-      <div class="hoja">${bloques}</div></body></html>`);
-    w.document.close();
+    w.document.write(html); w.document.close();
   }
 
   function moverSemana(n){ lunes = masDias(lunes, n*7); cargar(); }
