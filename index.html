@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-10
+  Armado el 2026-10-11
 -->
 <html lang="es">
 <head>
@@ -101,6 +101,7 @@ tbody tr:hover td{background:var(--bg)}
 .b-split{background:var(--warn-l);color:var(--warn)}
 .b-warn{background:var(--warn-l);color:var(--warn);border:1px solid #e9c88a}
 .b-ok{background:var(--accent-l);color:var(--accent)}
+.b-err{background:var(--danger-l);color:var(--danger)}
 .b-off{background:var(--surface2);color:var(--text3)}
 
 /* ── Botones ─────────────────────────────────────────────────────── */
@@ -264,6 +265,20 @@ tbody tr:hover td{background:var(--bg)}
 .logo-prev img{max-width:100%;max-height:100%;object-fit:contain}
 .alert{align-items:center}
 
+/* ── Configuración ───────────────────────────────────────────────── */
+.opciones{display:grid;gap:8px;margin-top:6px}
+.opcion{display:flex;gap:10px;align-items:flex-start;cursor:pointer;
+        padding:10px 12px;border:1px solid var(--border);
+        border-radius:var(--rs);background:var(--bg)}
+.opcion:hover{border-color:var(--border2)}
+.opcion input{margin-top:3px;accent-color:var(--accent);flex-shrink:0}
+.opcion:has(input:checked){border-color:var(--accent);background:var(--accent-l)}
+.op-tit{font-size:13px;font-weight:600}
+.op-txt{font-size:11.5px;color:var(--text2);line-height:1.5;margin-top:2px}
+.cfg-cambio{font-family:'DM Mono',monospace;font-size:12px}
+.cfg-cambio del{color:var(--danger);text-decoration:line-through}
+.cfg-cambio ins{color:var(--accent);text-decoration:none;font-weight:600}
+
 </style>
 </head>
 <body>
@@ -324,6 +339,9 @@ tbody tr:hover td{background:var(--bg)}
       <div class="nav-sec">Consultas</div>
       <div class="nav-item" data-ir="historial"><span class="ic">◷</span> Historial</div>
       <div class="nav-item" data-ir="constancias"><span class="ic">✎</span> Constancias</div>
+
+      <div class="nav-sec">Sistema</div>
+      <div class="nav-item" data-ir="config"><span class="ic">⚙</span> Configuración</div>
     </nav>
 
     <div class="conn-bar">
@@ -382,39 +400,6 @@ tbody tr:hover td{background:var(--bg)}
         <p class="ayuda" id="ini-historico" style="margin-top:.8rem"></p>
       </div>
 
-      <div class="card">
-        <div class="card-title">Datos de la empresa</div>
-        <p class="ayuda" style="margin-bottom:1rem">
-          Esto sale en los comprobantes, las constancias y la portada.
-        </p>
-        <div class="ini-fila">
-          <div class="form-grid" style="margin:0">
-            <div class="fg"><label>Razón social</label>
-              <input id="emp-razon" placeholder="PROFECHA S.A."></div>
-            <div class="fg"><label>Cédula jurídica</label>
-              <input id="emp-cedula" placeholder="3-101-173484"></div>
-            <div class="fg"><label>Nombre comercial</label>
-              <input id="emp-nombre" placeholder="La Fiesta del Maíz"></div>
-            <div class="fg" style="justify-content:flex-end">
-              <button class="btn btn-p" id="emp-guardar">Guardar</button></div>
-          </div>
-          <div>
-            <label class="fg-lbl">Logo</label>
-            <div class="logo-prev" id="emp-logo-prev"></div>
-            <div class="abar" style="margin-top:.6rem">
-              <label class="btn btn-s" style="cursor:pointer">
-                Subir imagen
-                <input type="file" id="emp-logo" accept="image/*" style="display:none">
-              </label>
-              <button class="btn btn-s" id="emp-logo-quitar">Quitar</button>
-            </div>
-            <p class="ayuda" style="margin-top:.5rem">
-              PNG o JPG, menos de 400 KB. Se guarda dentro de la base, así que
-              los documentos lo llevan adentro y se imprimen sin internet.
-            </p>
-          </div>
-        </div>
-      </div>
     </section>
 
     <!-- ── Horario ─────────────────────────────────────────────── -->
@@ -1145,6 +1130,210 @@ tbody tr:hover td{background:var(--bg)}
       </div>
     </section>
 
+    <!-- ── Configuración ───────────────────────────────────────── -->
+    <section class="page" id="pg-config">
+      <div class="page-header">
+        <div class="page-title">Configuración</div>
+        <div class="page-sub">Datos de la empresa y parámetros de cálculo.</div>
+      </div>
+
+      <div class="alert alert-warn" style="margin-bottom:1.2rem">
+        <span>⚠</span>
+        <div>Lo que se cambie acá afecta <strong>los cálculos de aquí en
+        adelante</strong>. Las semanas ya guardadas no se recalculan: sus
+        montos quedan como se pagaron.</div>
+      </div>
+
+      <!-- Empresa -->
+      <div class="card">
+        <div class="card-title">Datos de la empresa</div>
+        <p class="ayuda" style="margin-bottom:1rem">
+          Esto sale en los comprobantes, las constancias y la portada.
+        </p>
+        <div class="ini-fila">
+          <div class="form-grid" style="margin:0">
+            <div class="fg"><label>Razón social</label>
+              <input id="emp-razon" placeholder="PROFECHA S.A."></div>
+            <div class="fg"><label>Cédula jurídica</label>
+              <input id="emp-cedula" placeholder="3-101-173484"></div>
+            <div class="fg"><label>Nombre comercial</label>
+              <input id="emp-nombre" placeholder="La Fiesta del Maíz"></div>
+            <div class="fg"><label>Teléfono</label>
+              <input id="emp-tel" placeholder="(506) 2487-5757"></div>
+            <div class="fg" style="grid-column:1/-1"><label>Dirección</label>
+              <input id="emp-dir" placeholder="Contiguo a la Iglesia Católica de La Garita"></div>
+          </div>
+          <div>
+            <label class="fg-lbl">Logo</label>
+            <div class="logo-prev" id="emp-logo-prev"></div>
+            <div class="abar" style="margin-top:.6rem">
+              <label class="btn btn-s" style="cursor:pointer">
+                Subir imagen
+                <input type="file" id="emp-logo" accept="image/*" style="display:none">
+              </label>
+              <button class="btn btn-s" id="emp-logo-quitar">Quitar</button>
+            </div>
+            <p class="ayuda" style="margin-top:.5rem">
+              PNG o JPG, menos de 400 KB. Se guarda dentro de la base, así que
+              los documentos lo llevan adentro y se imprimen sin internet.
+            </p>
+          </div>
+        </div>
+        <div class="abar"><button class="btn btn-p" id="emp-guardar">Guardar datos de la empresa</button></div>
+      </div>
+
+      <!-- Nómina -->
+      <div class="card">
+        <div class="card-title">Parámetros de nómina (Costa Rica)</div>
+        <div class="form-grid">
+          <div class="fg"><label>% CCSS empleado</label>
+            <input type="number" id="cfg-ccss" step="0.01" min="0" max="100"></div>
+          <div class="fg"><label>Extra (×)</label>
+            <input type="number" id="cfg-extra" step="0.1" min="1"></div>
+          <div class="fg"><label>Doble (×)</label>
+            <input type="number" id="cfg-doble" step="0.1" min="1"></div>
+          <div class="fg"><label>Extra doble (×)</label>
+            <input type="number" id="cfg-extradob" step="0.1" min="1"></div>
+          <div class="fg"><label>Horas de descanso</label>
+            <input type="number" id="cfg-desc-h" step="1" min="0"></div>
+          <div class="fg"><label>Divisor de descanso</label>
+            <input type="number" id="cfg-desc-d" step="1" min="1"></div>
+        </div>
+        <p class="ayuda" style="margin-top:.6rem">
+          El descanso 8/48 se paga <strong>además</strong> de las horas:
+          por cada hora trabajada se agrega la fracción 8 ÷ 48.
+        </p>
+
+        <label class="fg-lbl" style="margin-top:1.2rem">Cómo se cuentan las horas extra</label>
+        <div class="opciones">
+          <label class="opcion">
+            <input type="radio" name="cfg-extras" id="cfg-extras-semana" value="semana">
+            <div>
+              <div class="op-tit">Acumuladas por semana (48 h)</div>
+              <div class="op-txt">Son extras solo las horas que pasen de 48 en la
+              semana. 12 h × 4 días = 48 h, sin extras; 12 h × 5 días = 60 h,
+              12 extras. <strong>Es como se viene pagando.</strong></div>
+            </div>
+          </label>
+          <label class="opcion">
+            <input type="radio" name="cfg-extras" id="cfg-extras-dia" value="dia">
+            <div>
+              <div class="op-tit">Por día (convencional)</div>
+              <div class="op-txt">Es extra lo que pase de 8 h en un mismo día,
+              aunque la semana no llegue a 48. Un día de 12 h = 8 normales +
+              4 extras.</div>
+            </div>
+          </label>
+        </div>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-nomina">Guardar nómina</button>
+          <button class="btn btn-s" id="cfg-reset-nomina">Restaurar valores de ley</button>
+        </div>
+      </div>
+
+      <!-- Incapacidades -->
+      <div class="card">
+        <div class="card-title">Incapacidades</div>
+        <div class="form-grid">
+          <div class="fg"><label>Días que paga el patrono</label>
+            <input type="number" id="cfg-inc-dias" step="1" min="0"></div>
+          <div class="fg"><label>Horas por día</label>
+            <input type="number" id="cfg-inc-horas" step="0.5" min="0"></div>
+          <div class="fg"><label>% que paga el patrono</label>
+            <input type="number" id="cfg-inc-pct" step="1" min="0" max="100"></div>
+        </div>
+        <p class="ayuda" style="margin-top:.6rem">
+          Art. 79 CT: el patrono paga el 50 % de los <strong>primeros tres
+          días</strong>; del cuarto en adelante le toca a la CCSS (60 %).
+          El tope de tres días se aplica a la incapacidad completa, no a
+          cada semana.
+        </p>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-inc">Guardar incapacidades</button>
+        </div>
+      </div>
+
+      <!-- Vacaciones -->
+      <div class="card">
+        <div class="card-title">Vacaciones</div>
+        <div class="form-grid">
+          <div class="fg"><label>Días por año</label>
+            <input type="number" id="cfg-vac-dias" step="0.5" min="0"></div>
+          <div class="fg"><label>Días laborales al año</label>
+            <input type="number" id="cfg-vac-labor" step="1" min="1"></div>
+          <div class="fg"><label>Horas por día de vacación</label>
+            <input type="number" id="cfg-vac-horas" step="0.5" min="0"></div>
+          <div class="fg"><label>Proporcional desde (AAAA-MM)</label>
+            <input id="cfg-vac-desde" placeholder="2026-09"></div>
+        </div>
+        <p class="ayuda" style="margin-top:.6rem">
+          Art. 153 CT: dos semanas por cada cincuenta trabajadas. Antes del
+          mes de corte se acredita un día por mes cumplido; de ahí en
+          adelante, proporcional a los días realmente trabajados. La
+          vacación <strong>cancelada</strong> no lleva CCSS (Art. 157 CT).
+        </p>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-vac">Guardar vacaciones</button>
+        </div>
+      </div>
+
+      <!-- Liquidaciones -->
+      <div class="card">
+        <div class="card-title">Liquidaciones</div>
+        <div class="form-grid">
+          <div class="fg"><label>Meses para el promedio</label>
+            <input type="number" id="cfg-liq-meses" step="1" min="1" max="24"></div>
+          <div class="fg"><label>Tope de años de cesantía</label>
+            <input type="number" id="cfg-liq-tope" step="1" min="1" max="20"></div>
+          <div class="fg"><label>Días por mes</label>
+            <input type="number" id="cfg-liq-dias" step="1" min="28" max="31"></div>
+        </div>
+        <p class="ayuda" style="margin-top:.6rem">
+          Art. 29 CT inciso 3: la cesantía se paga hasta un máximo de ocho
+          años, aunque la persona tenga más. El preaviso es Art. 28 CT.
+        </p>
+        <label class="fg-lbl" style="margin-top:1.2rem">Escala del MTSS — días de cesantía por año</label>
+        <div class="tab-wrap" style="margin-top:.4rem">
+          <table><thead><tr id="cfg-liq-escala-cab"></tr></thead>
+            <tbody><tr id="cfg-liq-escala"></tr></tbody></table>
+        </div>
+        <p class="ayuda" style="margin-top:.5rem">
+          Esta escala es de ley y no se edita desde acá. Si el MTSS la
+          cambiara, se actualiza con un query en la base.
+        </p>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-liq">Guardar liquidaciones</button>
+        </div>
+      </div>
+
+      <!-- Salón -->
+      <div class="card">
+        <div class="card-title">10 % de salón</div>
+        <div class="form-grid">
+          <div class="fg"><label>Monto por defecto del ayudante</label>
+            <input type="number" id="cfg-sal-ayudante" step="500" min="0"></div>
+        </div>
+        <p class="ayuda" style="margin-top:.6rem">
+          Es lo que se propone al agregar un ayudante nuevo al reparto.
+          Siempre se puede cambiar a mano en esa semana.
+        </p>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-salon">Guardar salón</button>
+        </div>
+      </div>
+
+      <!-- Conexión -->
+      <div class="card">
+        <div class="card-title">Conexión</div>
+        <div class="tab-wrap"><table><tbody id="cfg-conexion">
+          <tr><td class="vacio">Cargando…</td></tr>
+        </tbody></table></div>
+        <div class="abar">
+          <button class="btn btn-s" id="cfg-probar">Probar la conexión</button>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -1863,6 +2052,10 @@ const DB = (() => {
 
 const App = (() => {
 
+  /* La fecha de armado. armar.js la reemplaza al generar el archivo
+     único, para saber de un vistazo qué versión está subida. */
+  const VERSION = '2026-10-11';
+
   /* ── Utilidades ──────────────────────────────────────────────── */
   const $  = id => document.getElementById(id);
   const $$ = sel => Array.from(document.querySelectorAll(sel));
@@ -1993,9 +2186,19 @@ const App = (() => {
     $('conn-mail').textContent = ses.user.email;
     marcarConexion(true, 'Conectado');
 
+    // Los cinco grupos de config, de una. Antes solo se leían nomina y
+    // empresa, así que vacaciones, liquidaciones y salón trabajaban con
+    // los valores de respaldo del código y nunca con los de la base.
     try{
-      estado.cfg.nomina  = await DB.config('nomina')  || {};
-      estado.cfg.empresa = await DB.config('empresa') || {};
+      const [nom, emp, vac, liq, sal] = await Promise.all([
+        DB.config('nomina'), DB.config('empresa'), DB.config('vacaciones'),
+        DB.config('liquidacion'), DB.config('salon')
+      ]);
+      estado.cfg.nomina      = nom || {};
+      estado.cfg.empresa     = emp || {};
+      estado.cfg.vacaciones  = vac || {};
+      estado.cfg.liquidacion = liq || {};
+      estado.cfg.salon       = sal || {};
     }catch(err){
       console.warn('[config]', err.message);
     }
@@ -2041,7 +2244,7 @@ const App = (() => {
     }
   }
 
-  return { $, $$, fmtMon, fmtFecha, esc, toast, modal, estado,
+  return { $, $$, fmtMon, fmtFecha, esc, toast, modal, estado, VERSION,
            ir, registrarPagina, registrarModulo, marcarConexion, salir, iniciar };
 })();
 
@@ -2098,7 +2301,6 @@ const Inicio = (() => {
       pintarMes();
       pintarGraficos();
       pintarTabla();
-      pintarEmpresa();
 
       if (res){
         $('ini-historico').innerHTML =
@@ -2305,72 +2507,10 @@ Transferencia: ${fmtMon(tr)}</title></rect>`;
     </tr>`).join('') : '<tr><td colspan="6" class="vacio">Sin datos todavía</td></tr>';
   }
 
-  /* ── Datos de la empresa y el logo ───────────────────────────────
-     El logo se guarda como data URI dentro de config: así viaja con
-     los comprobantes y las constancias, y se imprimen igual aunque
-     no haya internet.                                              */
-  function pintarEmpresa(){
-    const e = App.estado.cfg.empresa || {};
-    $('emp-razon').value  = e.razon_social || '';
-    $('emp-cedula').value = e.cedula_juridica || '';
-    $('emp-nombre').value = e.nombre_comercial || '';
-    $('emp-logo-prev').innerHTML = e.logo
-      ? `<img src="${esc(e.logo)}" alt="">`
-      : '<span class="ayuda">Sin logo</span>';
-  }
-
-  async function subirLogo(archivo){
-    if (!archivo) return;
-    if (!/^image\//.test(archivo.type))
-      return toast('Eso no es una imagen', 'warn');
-    if (archivo.size > 400 * 1024)
-      return toast('La imagen pesa más de 400 KB. Usá una más liviana.', 'warn', 6000);
-
-    const dataUri = await new Promise((ok, mal) => {
-      const fr = new FileReader();
-      fr.onload = () => ok(fr.result);
-      fr.onerror = () => mal(new Error('No se pudo leer el archivo'));
-      fr.readAsDataURL(archivo);
-    });
-
-    try{
-      const cfg = Object.assign({}, App.estado.cfg.empresa || {}, { logo: dataUri });
-      await DB.guardarConfig('empresa', cfg);
-      App.estado.cfg.empresa = cfg;
-      pintarEmpresa();
-      toast('Logo guardado — ya sale en los comprobantes', 'ok');
-    }catch(err){
-      toast('No se pudo guardar: ' + err.message, 'err', 6000);
-    }
-  }
-
-  async function guardarEmpresa(){
-    try{
-      const cfg = Object.assign({}, App.estado.cfg.empresa || {}, {
-        razon_social    : $('emp-razon').value.trim(),
-        cedula_juridica : $('emp-cedula').value.trim(),
-        nombre_comercial: $('emp-nombre').value.trim()
-      });
-      await DB.guardarConfig('empresa', cfg);
-      App.estado.cfg.empresa = cfg;
-      toast('Datos de la empresa guardados', 'ok');
-    }catch(err){
-      toast('No se pudo guardar: ' + err.message, 'err', 6000);
-    }
-  }
+  /* Los datos de la empresa y el logo viven en Configuración. */
 
   function registrarModulo(){
     App.registrarPagina('inicio', cargar);
-    $('emp-logo').addEventListener('change', e => subirLogo(e.target.files[0]));
-    $('emp-guardar').addEventListener('click', guardarEmpresa);
-    $('emp-logo-quitar').addEventListener('click', async () => {
-      const cfg = Object.assign({}, App.estado.cfg.empresa || {});
-      delete cfg.logo;
-      await DB.guardarConfig('empresa', cfg);
-      App.estado.cfg.empresa = cfg;
-      pintarEmpresa();
-      toast('Logo quitado', 'ok');
-    });
   }
 
   return { registrarModulo, cargar };
@@ -3853,7 +3993,7 @@ const Planilla = (() => {
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <title>${esc(titulo)} — ${periodo}</title>
 <style>
-  @page { size:letter; margin:1.2cm }
+  @page { size:letter portrait; margin:.8cm }
   *{ box-sizing:border-box }
   body{ font:11px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif; color:#1a1917;
         margin:0; padding:1rem; background:#e9e7e2 }
@@ -3873,34 +4013,60 @@ const Planilla = (() => {
   .p-pie{ margin-top:auto; font-size:9px; color:#999 }
 
   /* ── Hoja de comprobantes ── */
-  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.6cm }
+  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.8cm }
+
+  /* Cuatro por página carta. La altura es fija para que el corte
+     caiga siempre en el mismo lugar y las tijeras no adivinen:
+     27.94 cm de hoja − 1.6 de márgenes = 26.34 útiles;
+     4 × 6.4 + 3 × 0.22 de aire = 26.26.                          */
   .comp{ position:relative; border:1px solid #ccc; border-radius:4px;
-         padding:10px 12px; margin-bottom:8px; page-break-inside:avoid }
-  .comp .logo{ position:absolute; top:10px; right:12px;
-               width:44px; height:44px; object-fit:contain }
-  .comp-empresa{ font-size:10px; font-weight:700; text-transform:uppercase;
-                 letter-spacing:.3px }
-  .comp-per{ font-size:9.5px; color:#666; margin-top:1px }
-  .comp-nombre{ font-size:14px; font-weight:700; margin-top:6px; padding-right:50px }
-  .comp-meta{ font-size:9px; color:#777; margin-bottom:6px }
-  .det{ width:100%; border-collapse:collapse; font-size:10.5px }
-  .det td{ padding:2.5px 0; border-bottom:1px solid #f0efec }
+         padding:7px 11px; margin-bottom:.22cm; height:6.4cm;
+         overflow:hidden; page-break-inside:avoid;
+         display:flex; flex-direction:column }
+  .comp .logo{ position:absolute; top:7px; right:11px;
+               width:34px; height:34px; object-fit:contain }
+  .comp-empresa{ font-size:8.5px; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.3px; line-height:1.2 }
+  .comp-per{ font-size:8px; color:#666; margin-top:0; line-height:1.2 }
+  .comp-nombre{ font-size:12.5px; font-weight:700; margin-top:4px;
+                padding-right:42px; line-height:1.15 }
+  .comp-meta{ font-size:8.5px; color:#777; margin-bottom:4px; line-height:1.2 }
+  .det{ width:100%; border-collapse:collapse; font-size:9.5px; line-height:1.3 }
+  .det td{ padding:1.2px 0; border-bottom:1px solid #f2f1ee }
   .det td.m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace;
              white-space:nowrap }
-  .det .tar{ color:#888; font-size:9.5px }
+  .det .tar{ color:#8a8a8a; font-size:8.5px }
   .det .resalta td{ color:#2d5a3d }
   .det .neg td{ color:#a8392b }
   .det .sub td{ font-weight:700; border-top:1px solid #999; border-bottom:none;
-                padding-top:4px }
-  .det .tot td{ font-weight:700; font-size:12px; border-top:1px solid #333;
-                border-bottom:none; padding-top:4px }
-  .nota{ margin-top:6px; padding:4px 8px; border-left:3px solid #2d5a3d;
-         background:#f4f7f4; font-size:9.5px }
-  .reparto{ margin-top:5px; font-size:9.5px; color:#555 }
-  .firmas{ display:flex; gap:14px; margin-top:12px; font-size:9.5px; color:#555 }
+                padding-top:2.5px }
+  .det .tot td{ font-weight:700; font-size:11.5px; border-top:1px solid #333;
+                border-bottom:none; padding-top:2.5px }
+  .nota{ margin-top:3px; padding:2px 7px; border-left:3px solid #2d5a3d;
+         background:#f4f7f4; font-size:8.5px }
+  .reparto{ margin-top:2px; font-size:8.5px; color:#555 }
+  .firmas{ display:flex; gap:14px; margin-top:auto; padding-top:5px;
+           font-size:8.5px; color:#555 }
   .firmas span{ flex:1 }
   .firmas i{ display:inline-block; min-width:70px; border-bottom:1px solid #999;
              font-style:normal }
+
+  /* ── Si a alguien no le cabe el detalle ──────────────────────────
+     Una semana puede traer feriado, acuerdo, vacaciones, incapacidad
+     y rebajos a la vez: doce líneas en vez de ocho. Antes que cortar
+     un dato del comprobante, se aprieta la letra por pasos; y si ni
+     así entra, el recuadro crece. Nunca se pierde una línea.      */
+  .comp.d1 .det{ font-size:9px; line-height:1.2 }
+  .comp.d1 .det td{ padding:.6px 0 }
+  .comp.d1 .det .tar{ font-size:8px }
+  .comp.d2 .det{ font-size:8.5px; line-height:1.15 }
+  .comp.d2 .det .tot td{ font-size:10.5px }
+  .comp.d2 .comp-nombre{ font-size:11.5px }
+  .comp.d2 .nota,.comp.d2 .reparto{ font-size:8px }
+  .comp.d3 .det{ font-size:8px }
+  .comp.d3 .det .tot td{ font-size:9.5px }
+  .comp.d3 .firmas{ font-size:7.5px; padding-top:3px }
+  .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
 
   /* ── Barra, solo en pantalla ── */
   .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
@@ -3923,6 +4089,27 @@ const Planilla = (() => {
 </div>
 ${portada(titulo, periodo, lista.length, total)}
 <div class="hoja">${lista.map(r => unComprobante(r, periodo)).join('')}</div>
+<script>
+/* Ajusta cada comprobante antes de imprimir: si el detalle no entra en
+   los 6.4 cm, aprieta la letra por pasos; si ni así entra, deja crecer
+   el recuadro. Un comprobante nunca sale con una línea cortada.     */
+(function(){
+  var pasos = ['d1','d2','d3'];
+  var sobra = function(c){
+    if (c.scrollHeight - c.clientHeight > 1) return true;
+    var h = c.children;
+    for (var i = 0; i < h.length; i++)
+      if (h[i].scrollHeight - h[i].clientHeight > 1) return true;
+    return false;
+  };
+  var cajas = document.querySelectorAll('.comp');
+  for (var i = 0; i < cajas.length; i++){
+    var c = cajas[i];
+    for (var p = 0; p < pasos.length && sobra(c); p++) c.classList.add(pasos[p]);
+    if (sobra(c)) c.classList.add('crece');
+  }
+})();
+<\/script>
 </body></html>`;
 
     const w = window.open('', '_blank');
@@ -5710,17 +5897,29 @@ const Salon = (() => {
     </div>`;
   }
 
+  /* El detalle va en tira: los días como columnas, no como lista.
+     Así el comprobante mide lo mismo trabaje la persona dos días o
+     siete, que es lo que permite cortar siempre en el mismo lugar. */
   function unComprobanteSalon(f, t, periodo){
     const emp = App.estado.cfg.empresa || {};
     const hrs = porHoras(f);
-    const detalle = f.valores.map((v,d) => {
-      if (!nz(v)) return '';
-      const monto = hrs ? nz(v) * t[d].porHora : nz(v);
-      return `<tr>
-        <td>${DIA_SEM[d]}</td>
-        <td class="h">${hrs ? nz(v) + ' h' : ''}</td>
-        <td class="m">${fmtMon(monto)}</td></tr>`;
+    const cel = (txt, vacio) =>
+      `<td${vacio ? ' class="nada"' : ''}>${vacio ? '–' : txt}</td>`;
+
+    const encabezados = DIA_SEM.map((n,d) => {
+      const fe = masDias(lunes, d);
+      return `<th>${n}<i>${fe.getDate()}/${fe.getMonth()+1}</i></th>`;
     }).join('');
+
+    const filaHoras = hrs ? `<tr class="h"><th>Horas</th>${
+      f.valores.map(v => cel(nz(v), !nz(v))).join('')}</tr>` : '';
+
+    const filaTarifa = hrs ? `<tr class="r"><th>Por hora</th>${
+      f.valores.map((v,d) => cel(fmtMon(t[d].porHora), !nz(v))).join('')}</tr>` : '';
+
+    const filaMonto = `<tr class="m"><th>Monto</th>${
+      f.valores.map((v,d) => cel(
+        fmtMon(hrs ? nz(v) * t[d].porHora : nz(v)), !nz(v))).join('')}</tr>`;
 
     return `<div class="comp">
       ${panelBolsa(periodo)}
@@ -5735,25 +5934,27 @@ const Salon = (() => {
           </div>
         </div>
 
-        <div class="nombre">${esc(f.nombre || '')}</div>
-        <div class="meta">${f.codigo_reloj != null ? 'ID ' + f.codigo_reloj + ' · ' : ''}${
-          f.rol === 'salonero' ? 'Salonero' : 'Ayudante'} · ${
-          hrs ? 'pago por horas' : 'monto fijo'}</div>
-
-        ${detalle ? `<table class="det">
-          <tr><th>Día</th><th class="h">${hrs ? 'Horas' : ''}</th>
-              <th class="m">Monto</th></tr>
-          ${detalle}
-        </table>` : ''}
-
-        <div class="neto">
-          <span>Salario neto a pagar</span>
-          <strong>${fmtMon(montoFinal(f))}</strong>
+        <div class="quien">
+          <div class="nombre">${esc(f.nombre || '')}</div>
+          <div class="meta">${f.codigo_reloj != null ? 'ID ' + f.codigo_reloj + ' · ' : ''}${
+            f.rol === 'salonero' ? 'Salonero' : 'Ayudante'} · ${
+            hrs ? 'pago por horas' : 'monto fijo'}</div>
         </div>
 
-        <div class="firmas">
-          <div><span>Cédula</span><i></i></div>
-          <div><span>Firma de recibido</span><i></i></div>
+        <table class="dias">
+          <tr class="enc"><th></th>${encabezados}</tr>
+          ${filaHoras}${filaTarifa}${filaMonto}
+        </table>
+
+        <div class="pie">
+          <div class="neto">
+            <span>Salario neto a pagar</span>
+            <strong>${fmtMon(montoFinal(f))}</strong>
+          </div>
+          <div class="firmas">
+            <div><span>Cédula</span><i></i></div>
+            <div><span>Firma de recibido</span><i></i></div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -5776,56 +5977,89 @@ const Salon = (() => {
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <title>10 % de salón — ${periodo}</title>
 <style>
-  @page { size:letter; margin:1.1cm }
+  @page { size:letter portrait; margin:.8cm }
   *{ box-sizing:border-box }
   body{ font:11px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
         color:#1a1917; margin:0; padding:1rem; background:#e9e7e2 }
-  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.6cm }
+  .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.8cm }
 
-  .comp{ display:grid; grid-template-columns:5.4cm 1fr; gap:0;
+  /* Cuatro por página carta, igual que los de planilla. La altura es
+     fija para que el corte caiga siempre en el mismo lugar:
+     27.94 cm de hoja − 1.6 de márgenes = 26.34 útiles;
+     4 × 6.4 + 3 × 0.22 de aire = 26.26.                           */
+  .comp{ display:grid; grid-template-columns:5.1cm 1fr; gap:0;
          border:1px solid #c9c6c0; border-radius:5px; overflow:hidden;
-         margin-bottom:9px; page-break-inside:avoid }
+         height:6.4cm; margin-bottom:.22cm; page-break-inside:avoid }
 
   /* ── Lo que entró cada día ── */
-  .bolsa{ background:#f6f5f2; border-right:1px solid #c9c6c0; padding:9px 11px }
-  .bolsa-tit{ font-size:9.5px; font-weight:700; text-transform:uppercase;
-              letter-spacing:.5px; color:#2d5a3d }
-  .bolsa-per{ font-size:8.5px; color:#777; margin-bottom:6px }
-  .bolsa table{ width:100%; border-collapse:collapse; font-size:10px }
-  .bolsa td{ padding:2px 0; border-bottom:1px solid #e6e3dd }
+  .bolsa{ background:#f6f5f2; border-right:1px solid #c9c6c0; padding:8px 10px }
+  .bolsa-tit{ font-size:9px; font-weight:700; text-transform:uppercase;
+              letter-spacing:.5px; color:#2d5a3d; line-height:1.2 }
+  .bolsa-per{ font-size:8px; color:#777; margin-bottom:5px }
+  .bolsa table{ width:100%; border-collapse:collapse; font-size:9.5px }
+  .bolsa td{ padding:1.5px 0; border-bottom:1px solid #e6e3dd }
   .bolsa .dia{ color:#555 }
   .bolsa .m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace }
   .bolsa .tot td{ font-weight:700; border-top:1px solid #999;
-                  border-bottom:none; padding-top:4px; color:#2d5a3d }
+                  border-bottom:none; padding-top:3px; color:#2d5a3d }
 
   /* ── Lo de la persona ── */
-  .lado{ padding:9px 12px; display:flex; flex-direction:column }
-  .cab{ display:flex; gap:9px; align-items:flex-start;
-        border-bottom:1px solid #e6e3dd; padding-bottom:6px }
-  .cab .logo{ width:40px; height:40px; object-fit:contain; flex-shrink:0 }
-  .emp{ font-size:9.5px; font-weight:700; text-transform:uppercase;
-        letter-spacing:.3px }
-  .tit{ font-size:12px; font-weight:600; color:#2d5a3d; margin-top:1px }
-  .per{ font-size:9px; color:#777 }
-  .nombre{ font-size:15px; font-weight:700; margin-top:7px }
-  .meta{ font-size:9px; color:#777; margin-bottom:6px }
-  .det{ width:100%; border-collapse:collapse; font-size:10px }
-  .det th{ text-align:left; font-size:8.5px; text-transform:uppercase;
-           letter-spacing:.4px; color:#999; font-weight:600;
-           border-bottom:1px solid #ddd; padding-bottom:2px }
-  .det td{ padding:2px 0; border-bottom:1px solid #f2f0ec }
-  .det .h{ text-align:right; width:52px; color:#666 }
-  .det .m{ text-align:right; width:80px;
-           font-family:'DM Mono',ui-monospace,monospace }
-  .neto{ margin-top:auto; padding-top:8px; display:flex; align-items:baseline;
+  .lado{ padding:8px 11px; display:flex; flex-direction:column; min-width:0 }
+  .cab{ display:flex; gap:8px; align-items:flex-start;
+        border-bottom:1px solid #e6e3dd; padding-bottom:5px }
+  .cab .logo{ width:30px; height:30px; object-fit:contain; flex-shrink:0 }
+  .emp{ font-size:9px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.3px; line-height:1.25 }
+  .tit{ font-size:11px; font-weight:600; color:#2d5a3d; line-height:1.25 }
+  .per{ font-size:8.5px; color:#777; line-height:1.25 }
+  .quien{ display:flex; align-items:baseline; gap:9px; margin-top:4px;
+          flex-wrap:wrap }
+  .nombre{ font-size:12.5px; font-weight:700; line-height:1.2 }
+  .meta{ font-size:8.5px; color:#777 }
+
+  /* El detalle en tira: los días como columnas */
+  .dias{ width:100%; border-collapse:collapse; margin-top:5px;
+         font-size:9.5px; table-layout:fixed }
+  .dias th{ font-weight:600; text-align:right; padding:1.2px 3px }
+  .dias td{ text-align:right; padding:1.2px 3px;
+            font-family:'DM Mono',ui-monospace,monospace }
+  .dias .enc th{ font-size:8px; color:#8a8a8a; text-transform:uppercase;
+                 letter-spacing:.3px; border-bottom:1px solid #ddd;
+                 padding-bottom:2px; line-height:1.15 }
+  .dias .enc th i{ display:block; font-style:normal; font-weight:400;
+                   font-size:7.5px; letter-spacing:0 }
+  .dias tr:not(.enc) th{ text-align:left; font-size:8.5px; color:#777;
+                         text-transform:uppercase; letter-spacing:.3px;
+                         padding-left:0; width:2.1cm }
+  .dias tr:not(.enc) td{ border-bottom:1px solid #f2f0ec }
+  .dias .r td,.dias .r th{ color:#8a8a8a; font-size:8.5px }
+  .dias .m td{ font-weight:700 }
+  .dias .nada{ color:#c8c5bf }
+
+  .pie{ margin-top:auto }
+  .neto{ padding-top:5px; display:flex; align-items:baseline;
          justify-content:space-between; gap:10px; border-top:2px solid #2d5a3d }
-  .neto span{ font-size:10px; font-weight:600; text-transform:uppercase;
+  .neto span{ font-size:9px; font-weight:600; text-transform:uppercase;
               letter-spacing:.5px }
-  .neto strong{ font-size:17px; font-family:'DM Mono',ui-monospace,monospace }
-  .firmas{ display:flex; gap:18px; margin-top:16px }
+  .neto strong{ font-size:15px; font-family:'DM Mono',ui-monospace,monospace }
+  .firmas{ display:flex; gap:18px; margin-top:8px }
   .firmas div{ flex:1 }
-  .firmas span{ display:block; font-size:8.5px; color:#888; margin-bottom:11px }
+  .firmas span{ display:block; font-size:8px; color:#888; margin-bottom:9px }
   .firmas i{ display:block; border-bottom:1px solid #555; height:1px }
+
+  /* Si a alguien no le cabe —un nombre muy largo, la bolsa de los
+     siete días— se aprieta la letra antes que cortar un dato; y si
+     ni así entra, el recuadro crece.                              */
+  .comp.d1 .dias{ font-size:8.5px }
+  .comp.d1 .bolsa table{ font-size:9px }
+  .comp.d1 .bolsa td{ padding:1px 0 }
+  .comp.d1 .nombre{ font-size:11.5px }
+  .comp.d2 .dias{ font-size:8px }
+  .comp.d2 .bolsa table{ font-size:8.5px }
+  .comp.d2 .neto strong{ font-size:13.5px }
+  .comp.d3 .dias{ font-size:7.5px }
+  .comp.d3 .firmas{ margin-top:5px }
+  .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
 
   .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
           padding:.7rem 1.1rem; border-radius:6px; display:flex; gap:1rem;
@@ -5845,6 +6079,24 @@ const Salon = (() => {
   <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
 </div>
 <div class="hoja">${lista.map(f => unComprobanteSalon(f, t, periodo)).join('')}</div>
+<script>
+(function(){
+  var pasos = ['d1','d2','d3'];
+  var sobra = function(c){
+    if (c.scrollHeight - c.clientHeight > 1) return true;
+    var h = c.children;
+    for (var i = 0; i < h.length; i++)
+      if (h[i].scrollHeight - h[i].clientHeight > 1) return true;
+    return false;
+  };
+  var cajas = document.querySelectorAll('.comp');
+  for (var i = 0; i < cajas.length; i++){
+    var c = cajas[i];
+    for (var p = 0; p < pasos.length && sobra(c); p++) c.classList.add(pasos[p]);
+    if (sobra(c)) c.classList.add('crece');
+  }
+})();
+<\/script>
 </body></html>`;
 
     const w = window.open('', '_blank');
@@ -6673,6 +6925,388 @@ const Constancias = (() => {
 })();
 
 App.registrarModulo(Constancias.registrarModulo);
+
+</script>
+<script>
+/* ══════ js/config.js ══════ */
+/* ═══════════════════════════════════════════════════════════════════
+   config.js — Datos de la empresa y parámetros de cálculo
+
+   Todo lo que esta pantalla edita vive en la tabla `config`, una fila
+   por grupo: empresa, nomina, vacaciones, liquidacion, salon.
+
+   Dos cuidados, porque la app está en uso:
+
+   · Guardar nunca reemplaza la fila entera a ciegas. Se arranca de lo
+     que ya está en la base y se cambian solo los campos del formulario,
+     así nada de lo que no sale en pantalla se pierde por el camino.
+
+   · Antes de guardar se muestra qué cambió, campo por campo, y hay que
+     confirmarlo. Subirle un punto al porcentaje de la CCSS mueve la
+     plata de todo el mundo; no debería poder pasar de un clic.
+
+   Lo guardado no recalcula lo viejo: las semanas ya cerradas conservan
+   los montos con los que se pagaron.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const Config = (() => {
+  const { $, esc, fmtMon, toast, modal } = App;
+
+  /* Los valores de ley. El botón «Restaurar» vuelve a estos. */
+  const LEY_NOMINA = {
+    ccss_pct: 10.83, mult_extra: 1.5, mult_doble: 2.0, mult_extra_doble: 3.5,
+    descanso_horas: 8, descanso_divisor: 48, extras_acumulativas: true,
+    incapacidad_dias_patrono: 3, incapacidad_horas_dia: 4,
+    incapacidad_pct_patrono: 50
+  };
+  const POR_DEFECTO = {
+    vacaciones : { dias_por_anio:12, dias_labor_anio:300,
+                   horas_dia_vacacion:8, formula_desde:'2026-09' },
+    liquidacion: { meses_promedio:6, tope_anios_cesantia:8, dias_mes:30 },
+    salon      : { monto_ayudante_default:5000 }
+  };
+
+  /* ── Leer y escribir campos ──────────────────────────────────── */
+  const num = (id, porDefecto) => {
+    const v = Number($(id).value);
+    return $(id).value.trim() === '' || isNaN(v) ? porDefecto : v;
+  };
+
+  function pintar(){
+    const emp = App.estado.cfg.empresa     || {};
+    const nom = App.estado.cfg.nomina      || {};
+    const vac = App.estado.cfg.vacaciones  || {};
+    const liq = App.estado.cfg.liquidacion || {};
+    const sal = App.estado.cfg.salon       || {};
+
+    $('emp-razon').value  = emp.razon_social     || '';
+    $('emp-cedula').value = emp.cedula_juridica  || '';
+    $('emp-nombre').value = emp.nombre_comercial || '';
+    $('emp-tel').value    = emp.telefono         || '';
+    $('emp-dir').value    = emp.direccion        || '';
+    $('emp-logo-prev').innerHTML = emp.logo
+      ? `<img src="${esc(emp.logo)}" alt="">`
+      : '<span class="ayuda">Sin logo</span>';
+
+    $('cfg-ccss').value     = nom.ccss_pct         ?? LEY_NOMINA.ccss_pct;
+    $('cfg-extra').value    = nom.mult_extra       ?? LEY_NOMINA.mult_extra;
+    $('cfg-doble').value    = nom.mult_doble       ?? LEY_NOMINA.mult_doble;
+    $('cfg-extradob').value = nom.mult_extra_doble ?? LEY_NOMINA.mult_extra_doble;
+    $('cfg-desc-h').value   = nom.descanso_horas   ?? LEY_NOMINA.descanso_horas;
+    $('cfg-desc-d').value   = nom.descanso_divisor ?? LEY_NOMINA.descanso_divisor;
+
+    const acum = nom.extras_acumulativas !== false;
+    $('cfg-extras-semana').checked = acum;
+    $('cfg-extras-dia').checked    = !acum;
+
+    $('cfg-inc-dias').value  = nom.incapacidad_dias_patrono ?? LEY_NOMINA.incapacidad_dias_patrono;
+    $('cfg-inc-horas').value = nom.incapacidad_horas_dia    ?? LEY_NOMINA.incapacidad_horas_dia;
+    $('cfg-inc-pct').value   = nom.incapacidad_pct_patrono  ?? LEY_NOMINA.incapacidad_pct_patrono;
+
+    $('cfg-vac-dias').value  = vac.dias_por_anio      ?? POR_DEFECTO.vacaciones.dias_por_anio;
+    $('cfg-vac-labor').value = vac.dias_labor_anio    ?? POR_DEFECTO.vacaciones.dias_labor_anio;
+    $('cfg-vac-horas').value = vac.horas_dia_vacacion ?? POR_DEFECTO.vacaciones.horas_dia_vacacion;
+    $('cfg-vac-desde').value = vac.formula_desde      || POR_DEFECTO.vacaciones.formula_desde;
+
+    $('cfg-liq-meses').value = liq.meses_promedio      ?? POR_DEFECTO.liquidacion.meses_promedio;
+    $('cfg-liq-tope').value  = liq.tope_anios_cesantia ?? POR_DEFECTO.liquidacion.tope_anios_cesantia;
+    $('cfg-liq-dias').value  = liq.dias_mes            ?? POR_DEFECTO.liquidacion.dias_mes;
+    pintarEscala(liq.cesantia_por_anio);
+
+    $('cfg-sal-ayudante').value =
+      sal.monto_ayudante_default ?? POR_DEFECTO.salon.monto_ayudante_default;
+
+    pintarConexion();
+  }
+
+  function pintarEscala(escala){
+    const e = escala || {};
+    const anios = Object.keys(e).map(Number).filter(n => !isNaN(n)).sort((a,b) => a-b);
+    if (!anios.length){
+      $('cfg-liq-escala-cab').innerHTML = '<th>Escala</th>';
+      $('cfg-liq-escala').innerHTML =
+        '<td class="vacio">No está cargada — corré el query 15</td>';
+      return;
+    }
+    $('cfg-liq-escala-cab').innerHTML =
+      '<th>Año</th>' + anios.map(a => `<th class="num">${a}</th>`).join('');
+    $('cfg-liq-escala').innerHTML =
+      '<td style="font-weight:600">Días</td>' +
+      anios.map(a => `<td class="num">${e[a]}</td>`).join('');
+  }
+
+  function pintarConexion(){
+    const u = App.estado.usuario || {};
+    const proyecto = (DB.cli && DB.cli.supabaseUrl) || '—';
+    const fila = (k, v) =>
+      `<tr><td style="font-weight:600;white-space:nowrap">${esc(k)}</td>
+           <td>${v}</td></tr>`;
+    $('cfg-conexion').innerHTML =
+      fila('Base de datos', `<code>${esc(proyecto)}</code>`) +
+      fila('Sesión', esc(u.email || '—')) +
+      fila('Versión de la app', esc(App.VERSION || '—')) +
+      fila('Prueba', '<span id="cfg-prueba" class="ayuda">Sin probar todavía</span>');
+  }
+
+  /* ── Confirmar antes de guardar ──────────────────────────────────
+     Muestra solo lo que cambió. Si no cambió nada, no hay por qué
+     molestar: se guarda y ya.                                     */
+  const ETIQUETA = {
+    ccss_pct:'% CCSS', mult_extra:'Multiplicador extra',
+    mult_doble:'Multiplicador doble', mult_extra_doble:'Multiplicador extra doble',
+    descanso_horas:'Horas de descanso', descanso_divisor:'Divisor de descanso',
+    extras_acumulativas:'Horas extra',
+    incapacidad_dias_patrono:'Días que paga el patrono',
+    incapacidad_horas_dia:'Horas por día', incapacidad_pct_patrono:'% del patrono',
+    dias_por_anio:'Días por año', dias_labor_anio:'Días laborales al año',
+    horas_dia_vacacion:'Horas por día de vacación', formula_desde:'Proporcional desde',
+    meses_promedio:'Meses para el promedio', tope_anios_cesantia:'Tope de años',
+    dias_mes:'Días por mes', monto_ayudante_default:'Monto del ayudante',
+    razon_social:'Razón social', cedula_juridica:'Cédula jurídica',
+    nombre_comercial:'Nombre comercial', telefono:'Teléfono', direccion:'Dirección'
+  };
+
+  const comoTexto = (k, v) => {
+    if (k === 'extras_acumulativas') return v === false ? 'por día' : 'acumuladas (48 h)';
+    if (k === 'monto_ayudante_default') return fmtMon(v);
+    return v === '' || v == null ? '—' : String(v);
+  };
+
+  function diferencias(antes, ahora){
+    return Object.keys(ahora).filter(k => {
+      const a = antes ? antes[k] : undefined;
+      return comoTexto(k, a) !== comoTexto(k, ahora[k]);
+    }).map(k => ({ campo: ETIQUETA[k] || k,
+                   de: comoTexto(k, antes ? antes[k] : undefined),
+                   a : comoTexto(k, ahora[k]) }));
+  }
+
+  function confirmar(titulo, cambios, nota){
+    return new Promise(ok => {
+      const m = modal({ titulo, ancho:'520px', cuerpo:`
+        <table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
+          <thead><tr><th style="text-align:left">Campo</th>
+            <th style="text-align:left">Estaba</th>
+            <th style="text-align:left">Queda</th></tr></thead>
+          <tbody>${cambios.map(c => `<tr class="cfg-cambio">
+            <td style="font-family:inherit">${esc(c.campo)}</td>
+            <td><del>${esc(c.de)}</del></td>
+            <td><ins>${esc(c.a)}</ins></td></tr>`).join('')}</tbody>
+        </table>
+        ${nota ? `<div class="alert alert-warn"><span>⚠</span><div>${nota}</div></div>` : ''}
+        <div class="abar" style="justify-content:flex-end">
+          <button class="btn btn-s" id="cfg-no">Cancelar</button>
+          <button class="btn btn-p" id="cfg-si">Guardar el cambio</button>
+        </div>`});
+      m.el.querySelector('#cfg-no').onclick = () => { m.cerrar(); ok(false); };
+      m.el.querySelector('#cfg-si').onclick = () => { m.cerrar(); ok(true); };
+    });
+  }
+
+  /* Guarda un grupo mezclando sobre lo que ya hay en la base. */
+  async function guardarGrupo(clave, campos, { titulo, nota } = {}){
+    let actual;
+    try{
+      actual = await DB.config(clave) || {};
+    }catch(err){
+      return toast('No se pudo leer la configuración: ' + err.message, 'err', 6000);
+    }
+
+    const cambios = diferencias(actual, campos);
+    if (!cambios.length) return toast('No hay nada que cambiar', 'warn');
+    if (!await confirmar(titulo || 'Confirmar el cambio', cambios, nota)) return;
+
+    try{
+      const nuevo = Object.assign({}, actual, campos);
+      await DB.guardarConfig(clave, nuevo);
+      App.estado.cfg[clave] = nuevo;
+      pintar();
+      toast(cambios.length === 1 ? 'Cambio guardado'
+                                 : cambios.length + ' cambios guardados', 'ok');
+    }catch(err){
+      toast('No se pudo guardar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  /* ── Empresa ─────────────────────────────────────────────────────
+     El logo se guarda como data URI dentro de config: así viaja con
+     los comprobantes y las constancias, y se imprimen igual aunque
+     no haya internet.                                              */
+  function guardarEmpresa(){
+    return guardarGrupo('empresa', {
+      razon_social    : $('emp-razon').value.trim(),
+      cedula_juridica : $('emp-cedula').value.trim(),
+      nombre_comercial: $('emp-nombre').value.trim(),
+      telefono        : $('emp-tel').value.trim(),
+      direccion       : $('emp-dir').value.trim()
+    }, { titulo:'Datos de la empresa' });
+  }
+
+  async function subirLogo(archivo){
+    if (!archivo) return;
+    if (!/^image\//.test(archivo.type))
+      return toast('Eso no es una imagen', 'warn');
+    if (archivo.size > 400 * 1024)
+      return toast('La imagen pesa más de 400 KB. Usá una más liviana.', 'warn', 6000);
+
+    const dataUri = await new Promise((ok, mal) => {
+      const fr = new FileReader();
+      fr.onload  = () => ok(fr.result);
+      fr.onerror = () => mal(new Error('No se pudo leer el archivo'));
+      fr.readAsDataURL(archivo);
+    });
+
+    try{
+      const actual = await DB.config('empresa') || {};
+      const cfg = Object.assign({}, actual, { logo: dataUri });
+      await DB.guardarConfig('empresa', cfg);
+      App.estado.cfg.empresa = cfg;
+      pintar();
+      toast('Logo guardado — ya sale en los comprobantes', 'ok');
+    }catch(err){
+      toast('No se pudo guardar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  async function quitarLogo(){
+    try{
+      const cfg = Object.assign({}, await DB.config('empresa') || {});
+      if (!cfg.logo) return toast('No hay logo que quitar', 'warn');
+      delete cfg.logo;
+      await DB.guardarConfig('empresa', cfg);
+      App.estado.cfg.empresa = cfg;
+      pintar();
+      toast('Logo quitado', 'ok');
+    }catch(err){
+      toast('No se pudo guardar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  /* ── Nómina ──────────────────────────────────────────────────── */
+  function guardarNomina(){
+    const L = LEY_NOMINA;
+    return guardarGrupo('nomina', {
+      ccss_pct           : num('cfg-ccss',     L.ccss_pct),
+      mult_extra         : num('cfg-extra',    L.mult_extra),
+      mult_doble         : num('cfg-doble',    L.mult_doble),
+      mult_extra_doble   : num('cfg-extradob', L.mult_extra_doble),
+      descanso_horas     : num('cfg-desc-h',   L.descanso_horas),
+      descanso_divisor   : num('cfg-desc-d',   L.descanso_divisor),
+      extras_acumulativas: $('cfg-extras-semana').checked
+    }, { titulo:'Parámetros de nómina',
+         nota:'Esto cambia el cálculo de la planilla <strong>de aquí en ' +
+              'adelante</strong>. Las semanas ya guardadas no se tocan.' });
+  }
+
+  function restaurarNomina(){
+    $('cfg-ccss').value     = LEY_NOMINA.ccss_pct;
+    $('cfg-extra').value    = LEY_NOMINA.mult_extra;
+    $('cfg-doble').value    = LEY_NOMINA.mult_doble;
+    $('cfg-extradob').value = LEY_NOMINA.mult_extra_doble;
+    $('cfg-desc-h').value   = LEY_NOMINA.descanso_horas;
+    $('cfg-desc-d').value   = LEY_NOMINA.descanso_divisor;
+    $('cfg-extras-semana').checked = true;
+    $('cfg-extras-dia').checked    = false;
+    toast('Puestos los valores de ley — dale a Guardar para aplicarlos', 'warn', 5000);
+  }
+
+  function guardarIncapacidades(){
+    const L = LEY_NOMINA;
+    return guardarGrupo('nomina', {
+      incapacidad_dias_patrono: num('cfg-inc-dias',  L.incapacidad_dias_patrono),
+      incapacidad_horas_dia   : num('cfg-inc-horas', L.incapacidad_horas_dia),
+      incapacidad_pct_patrono : num('cfg-inc-pct',   L.incapacidad_pct_patrono)
+    }, { titulo:'Incapacidades',
+         nota:'Las incapacidades ya registradas conservan su monto. ' +
+              'Esto aplica a las que se registren de ahora en adelante.' });
+  }
+
+  /* ── Vacaciones, liquidaciones, salón ────────────────────────── */
+  function guardarVacaciones(){
+    const D = POR_DEFECTO.vacaciones;
+    return guardarGrupo('vacaciones', {
+      dias_por_anio     : num('cfg-vac-dias',  D.dias_por_anio),
+      dias_labor_anio   : num('cfg-vac-labor', D.dias_labor_anio),
+      horas_dia_vacacion: num('cfg-vac-horas', D.horas_dia_vacacion),
+      formula_desde     : $('cfg-vac-desde').value.trim() || D.formula_desde
+    }, { titulo:'Vacaciones',
+         nota:'El saldo de vacaciones se recalcula con estos números, ' +
+              'así que los saldos de todo el mundo pueden moverse.' });
+  }
+
+  function guardarLiquidacion(){
+    const D = POR_DEFECTO.liquidacion;
+    return guardarGrupo('liquidacion', {
+      meses_promedio     : num('cfg-liq-meses', D.meses_promedio),
+      tope_anios_cesantia: num('cfg-liq-tope',  D.tope_anios_cesantia),
+      dias_mes           : num('cfg-liq-dias',  D.dias_mes)
+    }, { titulo:'Liquidaciones',
+         nota:'Las liquidaciones ya emitidas quedan como están.' });
+  }
+
+  function guardarSalon(){
+    return guardarGrupo('salon', {
+      monto_ayudante_default: num('cfg-sal-ayudante',
+                                  POR_DEFECTO.salon.monto_ayudante_default)
+    }, { titulo:'10 % de salón' });
+  }
+
+  /* ── Probar la conexión ──────────────────────────────────────── */
+  async function probar(){
+    const dest = $('cfg-prueba');
+    if (dest) dest.textContent = 'Probando…';
+    const t0 = Date.now();
+    try{
+      const emps = await DB.empleados.listar();
+      const ms = Date.now() - t0;
+      if (dest) dest.innerHTML =
+        `<span class="badge b-ok">Responde</span> ${emps.length} empleados · ${ms} ms`;
+      toast('La conexión funciona', 'ok');
+    }catch(err){
+      if (dest) dest.innerHTML =
+        `<span class="badge b-err">Falló</span> ${esc(err.message)}`;
+      toast('No se pudo conectar: ' + err.message, 'err', 6000);
+    }
+  }
+
+  /* ── Arranque ────────────────────────────────────────────────── */
+  async function cargar(){
+    // Puede haber otra pestaña abierta, o un query corrido en Supabase
+    // después de que la app arrancó: se relee antes de pintar.
+    try{
+      const [emp, nom, vac, liq, sal] = await Promise.all([
+        DB.config('empresa'), DB.config('nomina'), DB.config('vacaciones'),
+        DB.config('liquidacion'), DB.config('salon')
+      ]);
+      App.estado.cfg.empresa     = emp || {};
+      App.estado.cfg.nomina      = nom || {};
+      App.estado.cfg.vacaciones  = vac || {};
+      App.estado.cfg.liquidacion = liq || {};
+      App.estado.cfg.salon       = sal || {};
+    }catch(err){
+      toast('No se pudo leer la configuración: ' + err.message, 'err', 6000);
+    }
+    pintar();
+  }
+
+  function registrarModulo(){
+    App.registrarPagina('config', cargar);
+    $('emp-guardar').onclick      = guardarEmpresa;
+    $('emp-logo-quitar').onclick  = quitarLogo;
+    $('emp-logo').addEventListener('change', e => subirLogo(e.target.files[0]));
+    $('cfg-guardar-nomina').onclick = guardarNomina;
+    $('cfg-reset-nomina').onclick   = restaurarNomina;
+    $('cfg-guardar-inc').onclick    = guardarIncapacidades;
+    $('cfg-guardar-vac').onclick    = guardarVacaciones;
+    $('cfg-guardar-liq').onclick    = guardarLiquidacion;
+    $('cfg-guardar-salon').onclick  = guardarSalon;
+    $('cfg-probar').onclick         = probar;
+  }
+
+  return { registrarModulo, cargar, LEY_NOMINA, POR_DEFECTO };
+})();
+
+App.registrarModulo(Config.registrarModulo);
 
 </script>
 </body>
