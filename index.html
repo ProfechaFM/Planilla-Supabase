@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-11
+  Armado el 2026-10-12
 -->
 <html lang="es">
 <head>
@@ -2054,7 +2054,7 @@ const App = (() => {
 
   /* La fecha de armado. armar.js la reemplaza al generar el archivo
      único, para saber de un vistazo qué versión está subida. */
-  const VERSION = '2026-10-11';
+  const VERSION = '2026-10-12';
 
   /* ── Utilidades ──────────────────────────────────────────────── */
   const $  = id => document.getElementById(id);
@@ -3256,14 +3256,44 @@ const Horario = (() => {
       } else {
         marcas = await parsearExcel(f);
       }
-      if (!marcas.length){
-        toast('No se encontraron marcas en el archivo', 'warn', 5000);
-        return;
-      }
+      if (!marcas.length){ sinMarcas(f.name, marcas.diagnostico); return; }
       await subirMarcas(marcas, f.name);
     }catch(err){
       toast('Error leyendo el archivo: ' + err.message, 'err', 6000);
     }
+  }
+
+  /* Un «no se encontraron marcas» a secas no dice nada y deja el
+     problema sin pista. Esto cuenta qué vio el lector y por qué
+     descartó las filas, que es lo que permite arreglarlo. */
+  function sinMarcas(nombre, d){
+    const dd = d || { filas:0, conCodigo:0, sinFecha:0, sinHora:0 };
+    const motivo =
+      dd.filas === 0        ? 'El archivo está vacío o la primera hoja no tiene datos.'
+    : dd.conCodigo === 0    ? 'Ninguna fila empieza con un código de empleado. ' +
+                              '¿Será que el reporte trae los datos en otra hoja?'
+    : dd.sinFecha           ? `Encontré ${dd.conCodigo} filas de empleado pero sin fecha. ` +
+                              'En el reporte «Primero &amp; Último» la fecha va en una fila ' +
+                              'aparte; si la quitaron al editarlo, no hay de dónde sacarla.'
+    : dd.sinHora            ? `Encontré ${dd.conCodigo} filas de empleado pero sin horas legibles.`
+    :                         `Leí ${dd.filas} filas y ninguna tenía código, fecha y hora juntos.`;
+
+    modal({ titulo:'No se encontraron marcas', ancho:'520px', cuerpo:`
+      <div style="font-size:13px;color:var(--text2);line-height:1.6">
+        <p style="margin:0 0 .8rem">No pude sacar ninguna marca de
+           <strong>${esc(nombre)}</strong>.</p>
+        <div class="alert alert-warn"><span>⚠</span><div>${motivo}</div></div>
+        <table style="width:100%;margin-top:1rem;font-size:12px">
+          <tr><td>Filas con contenido</td><td class="num">${dd.filas}</td></tr>
+          <tr><td>Filas que empiezan con un código</td><td class="num">${dd.conCodigo}</td></tr>
+          <tr><td>Descartadas por no tener fecha</td><td class="num">${dd.sinFecha}</td></tr>
+          <tr><td>Descartadas por no tener hora</td><td class="num">${dd.sinHora}</td></tr>
+        </table>
+        <p class="ayuda" style="margin-top:1rem">
+          Sirven los dos reportes de BioTime: el de transacciones (una marca
+          por línea) y el de «Primero &amp; Último». Exportalos sin editar.
+        </p>
+      </div>`});
   }
 
   // Exportación automática de BioTime: una línea por marca, separada por tabs
@@ -3277,39 +3307,178 @@ const Horario = (() => {
   async function parsearExcel(archivo){
     if (typeof XLSX === 'undefined') throw new Error('Falta la librería para leer Excel');
     const buf = await archivo.arrayBuffer();
-    const wb = XLSX.read(buf, { type:'array' });
+    const wb = XLSX.read(buf, { type:'array', cellDates:true });
     const hoja = wb.Sheets[wb.SheetNames[0]];
-    const filas = XLSX.utils.sheet_to_json(hoja, { header:1, defval:'' })
-                       .map(r => r.map(c => String(c == null ? '' : c).trim()));
-    return extraer(filas);
+    // raw:false deja que SheetJS formatee las celdas como se ven en Excel.
+    // Si se pide crudo, una fecha llega como número de serie (46289) y una
+    // hora como fracción (0.2708), y no hay regex que las reconozca.
+    return extraer(XLSX.utils.sheet_to_json(hoja, { header:1, defval:null, raw:false }));
   }
 
-  // Busca código, fecha y hora en cada fila, sin depender del orden exacto
-  // de las columnas: así tolera cambios en la plantilla de BioTime.
+  /* ── Lectura de los archivos del reloj ───────────────────────────
+     BioTime exporta en dos formatos y los dos tienen que entrar:
+
+     A) Transacciones — una marca por fila, con su fecha y su hora:
+          1   2026-09-28   06:28
+          1   2026-09-28   16:05
+
+     B) «Primero & Último» — la fecha va en una fila aparte y manda
+        para todo lo que sigue; cada fila de empleado trae DOS horas,
+        la entrada y la salida:
+          2026-09-28
+          ID de Empleado | Nombre | … | Día   | Entrada | Salida
+          1              | GABRIEL| … | lunes | 06:28   | 16:05
+
+     El formato B es el que se venía usando en la app de Sheets. El
+     lector viejo de acá solo entendía el A: como las filas de
+     empleado no traen fecha, las descartaba todas y el archivo salía
+     «sin marcas».
+
+     De una fila del formato B salen dos marcas. La base las vuelve a
+     juntar en una jornada (la más temprana es la entrada, la más
+     tarde la salida), así que el resultado es idéntico.          */
+
+  const txt = v => v == null ? '' : String(v).trim();
+
+  // 'YYYY-MM-DD' si la celda es una fecha; null si no lo es.
+  // Un código de reloj ('41') nunca pasa: una fecha lleva separadores.
+  function aFecha(v){
+    if (v instanceof Date && !isNaN(v))
+      return v.getFullYear() + '-' + dosDig(v.getMonth()+1) + '-' + dosDig(v.getDate());
+    if (typeof v === 'number'){
+      // Número de serie de Excel. Fuera de este rango no es una fecha.
+      if (v < 20000 || v > 80000) return null;
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+      return d.getUTCFullYear() + '-' + dosDig(d.getUTCMonth()+1) + '-' + dosDig(d.getUTCDate());
+    }
+    const s = txt(v);
+    let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\b|$)/);
+    if (m) return m[1] + '-' + dosDig(m[2]) + '-' + dosDig(m[3]);
+
+    // Año de dos o cuatro dígitos al final: 28/09/2026, 9/28/26…
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})(?:\b|$)/);
+    if (m){
+      let [, a, b, y] = m;
+      if (y.length === 2) y = (+y < 70 ? '20' : '19') + y;
+      // Cuál de los dos es el día: el que no puede ser mes manda. Si
+      // los dos pueden, se asume día primero, que es como se escribe acá.
+      let dia = a, mes = b;
+      if (+a > 12 && +b <= 12){ dia = a; mes = b; }
+      else if (+b > 12 && +a <= 12){ dia = b; mes = a; }
+      else if (+a > 12 && +b > 12) return null;
+      if (+dia > 31 || +mes > 12) return null;
+      return y + '-' + dosDig(mes) + '-' + dosDig(dia);
+    }
+    return null;
+  }
+
+  // 'HH:MM' si la celda es una hora; null si no.
+  function aHora(v){
+    if (v instanceof Date && !isNaN(v))
+      return dosDig(v.getHours()) + ':' + dosDig(v.getMinutes());
+    if (typeof v === 'number'){
+      if (v < 0 || v >= 1) return null;          // fracción del día
+      const min = Math.round(v * 1440);
+      return dosDig(Math.floor(min / 60)) + ':' + dosDig(min % 60);
+    }
+    const m = txt(v).match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    return dosDig(m[1]) + ':' + m[2];
+  }
+
+  const dosDig = n => String(n).padStart(2, '0');
+
   function extraer(filas){
-    const reFecha = /^\d{4}-\d{2}-\d{2}$/;
-    const reHora  = /^\d{1,2}:\d{2}(:\d{2})?$/;
     const out = [];
+    let fechaVigente = null;       // la que viene en su propia fila (formato B)
+    let haySecciones = false;      // el archivo separa los días en filas aparte
+    let colEnt = null, colSal = null;
+    const diag = { filas:0, conCodigo:0, sinFecha:0, sinHora:0 };
+
     for (const r of filas){
-      if (!r || r.length < 3) continue;
-      const cod = String(r[0] || '').trim();
-      if (!/^\d+$/.test(cod)) continue;          // descarta encabezados
-      let fecha = null, hora = null;
-      for (let i = 1; i < r.length; i++){
-        const v = String(r[i] || '').trim();
-        if (!fecha && reFecha.test(v)){ fecha = v; continue; }
-        if (fecha && !hora && reHora.test(v)){ hora = v.slice(0,5); break; }
+      if (!r || !r.length) continue;
+      if (r.every(c => !txt(c))) continue;
+      diag.filas++;
+
+      const esDato = /^\d+$/.test(txt(r[0]));   // una fila de empleado empieza con su código
+
+      // ── Fila de encabezado: ubica las columnas de entrada y salida ──
+      // Solo si NO es una fila de datos: en el reporte de transacciones
+      // la columna «Estado» trae los valores «Entrada» y «Salida», y
+      // tomar esa fila por encabezado se comía la marca.
+      if (!esDato && r.some(c => /entrada|primer|salida|[úu]ltim|check\s*(in|out)/i.test(txt(c)))){
+        r.forEach((c, i) => {
+          const n = txt(c);
+          if (colEnt == null && /entrada|primer|check\s*in/i.test(n))      colEnt = i;
+          if (/salida|[úu]ltim|check\s*out/i.test(n) && colSal == null)    colSal = i;
+        });
+        continue;
       }
-      if (!fecha || !hora){                       // fecha y hora en una sola celda
-        for (let i = 1; i < r.length; i++){
-          const m = String(r[i] || '').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})/);
-          if (m){ fecha = m[1]; hora = m[2]; break; }
+      // Otros encabezados y totales
+      if (!esDato && /^(id\s*(de)?\s*empleado|employee|totales?|total)\b/i.test(txt(r[0]))) continue;
+
+      // ── Fila de sección: solo la primera celda tiene contenido ──
+      // Es la que lleva la fecha del bloque. Si no se le puede leer la
+      // fecha, igual queda constancia de que el archivo viene por
+      // bloques, para no salir a buscar la fecha dentro de las filas de
+      // empleado — ahí vive «Fecha de ingreso», que no es la de la marca.
+      if (!esDato && !r.slice(1).some(c => txt(c))){
+        haySecciones = true;
+        const f = aFecha(r[0]);
+        if (f) fechaVigente = f;
+        continue;
+      }
+
+      // ── Fila de empleado ──
+      const cod = txt(r[0]);
+      if (!/^\d+$/.test(cod)) continue;
+      diag.conCodigo++;
+
+      // Fecha y hora en una sola celda: '2026-09-28 06:28'
+      let fecha = null, horas = [];
+      for (const c of r){
+        const m = txt(c).match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})/);
+        if (m){ fecha = m[1]; horas.push(aHora(m[2])); }
+      }
+
+      if (!horas.length){
+        // La fila de fecha manda. Buscar una fecha dentro de la fila de
+        // empleado solo sirve en el formato de transacciones; en
+        // «Primero & Último» hay columnas como «Fecha de ingreso» que
+        // se tomarían por la fecha de la marca y mandarían las horas
+        // de alguien al día que entró a trabajar.
+        if (!haySecciones){
+          for (let i = 1; i < r.length; i++){
+            const f = aFecha(r[i]);
+            if (f){ fecha = f; break; }
+          }
+        }
+        // Si el encabezado dijo cuáles son las columnas de entrada y
+        // salida, se usan esas. Sin encabezado se toman las dos
+        // primeras horas de la fila: en «Primero & Último» van juntas
+        // y antes de cualquier columna de totales.
+        if (colEnt != null || colSal != null){
+          [colEnt, colSal].forEach(i => { if (i != null && aHora(r[i])) horas.push(aHora(r[i])); });
+        } else {
+          for (let i = 1; i < r.length && horas.length < 2; i++){
+            const h = aHora(r[i]);
+            if (h) horas.push(h);
+          }
         }
       }
-      if (!fecha || !hora) continue;
-      out.push({ codigo:Number(cod), fecha, hora,
-                 origen: r[7] || null, terminal: r[12] || null });
+
+      if (!fecha) fecha = fechaVigente;
+      if (!fecha){ diag.sinFecha++; continue; }
+      if (!horas.length){ diag.sinHora++; continue; }
+
+      // Marcó una sola vez: BioTime repite la misma hora en las dos
+      // columnas. Es una marca, no dos — y la jornada queda sin salida,
+      // que es justo lo que hay que corregir a mano.
+      for (const h of [...new Set(horas)])
+        out.push({ codigo:Number(cod), fecha, hora:h, origen:null, terminal:null });
     }
+
+    out.diagnostico = diag;
     return out;
   }
 
