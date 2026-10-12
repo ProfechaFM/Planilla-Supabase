@@ -3257,6 +3257,7 @@ const Horario = (() => {
         marcas = await parsearExcel(f);
       }
       if (!marcas.length){ sinMarcas(f.name, marcas.diagnostico); return; }
+      if (!await confirmarSemanas(marcas, f.name)) return;
       await subirMarcas(marcas, f.name);
     }catch(err){
       toast('Error leyendo el archivo: ' + err.message, 'err', 6000);
@@ -3294,6 +3295,70 @@ const Horario = (() => {
           por línea) y el de «Primero &amp; Último». Exportalos sin editar.
         </p>
       </div>`});
+  }
+
+  /* ── A qué semana pertenece lo que se está cargando ──────────────
+     Cada marca se guarda con SU fecha, así que una que cae en otra
+     semana igual queda en el día correcto — la base arma las jornadas
+     por fecha, no por la semana que uno tenga en pantalla. El problema
+     no es que se guarde mal: es que uno no se entera. Si el archivo no
+     es de la semana que estás viendo, o si se parte entre dos, hay que
+     decirlo antes de importar y no después.                        */
+  function semanasDe(marcas){
+    const por = {};
+    for (const m of marcas){
+      const l = iso(lunesDe(new Date(m.fecha + 'T12:00:00')));
+      por[l] = (por[l] || 0) + 1;
+    }
+    return Object.keys(por).sort().map(l => ({ lunes:l, marcas:por[l] }));
+  }
+
+  const rotulo = l => {
+    const d = new Date(l + 'T12:00:00');
+    return corto(d) + ' al ' + corto(masDias(d, 6)) + ' de ' + masDias(d, 6).getFullYear();
+  };
+
+  function confirmarSemanas(marcas, nombre){
+    const sem    = semanasDe(marcas);
+    const actual = iso(lunes);
+    const enPantalla = sem.find(s => s.lunes === actual);
+
+    // Todo cae en la semana que estás viendo: no hay nada que avisar
+    if (sem.length === 1 && enPantalla) return Promise.resolve(true);
+
+    const filas = sem.map(s => `<tr>
+      <td>${rotulo(s.lunes)}${s.lunes === actual
+            ? ' <span class="badge b-ok">la que estás viendo</span>' : ''}</td>
+      <td class="num">${s.marcas} marca${s.marcas === 1 ? '' : 's'}</td></tr>`).join('');
+
+    const aviso = sem.length > 1
+      ? `El archivo se parte entre <strong>${sem.length} semanas</strong>.`
+      : `Estás situado en la semana del <strong>${rotulo(actual)}</strong> y el
+         archivo trae datos de la semana del <strong>${rotulo(sem[0].lunes)}</strong>.`;
+
+    return new Promise(ok => {
+      const m = modal({ titulo:'El archivo no es de esta semana', ancho:'540px', cuerpo:`
+        <div style="font-size:13px;color:var(--text2);line-height:1.6">
+          <div class="alert alert-warn"><span>⚠</span><div>${aviso}</div></div>
+          <table style="width:100%;margin-top:1rem">
+            <thead><tr><th style="text-align:left">Semana</th>
+              <th class="num">En el archivo</th></tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+          <p class="ayuda" style="margin-top:1rem">
+            Cada marca se guarda con su propia fecha, así que las horas quedan
+            en el día que de verdad se trabajaron, no en la semana que tengás
+            en pantalla. Nada se mueve de lugar.
+            ${!enPantalla ? ' Eso sí, no vas a ver ningún cambio acá hasta que te muevas a esa semana.' : ''}
+          </p>
+          <div class="abar" style="justify-content:flex-end">
+            <button class="btn btn-s" id="sem-no">Cancelar</button>
+            <button class="btn btn-p" id="sem-si">Importar de todas formas</button>
+          </div>
+        </div>`});
+      m.el.querySelector('#sem-no').onclick = () => { m.cerrar(); ok(false); };
+      m.el.querySelector('#sem-si').onclick = () => { m.cerrar(); ok(true); };
+    });
   }
 
   // Exportación automática de BioTime: una línea por marca, separada por tabs
@@ -3403,15 +3468,25 @@ const Horario = (() => {
       const esDato = /^\d+$/.test(txt(r[0]));   // una fila de empleado empieza con su código
 
       // ── Fila de encabezado: ubica las columnas de entrada y salida ──
-      // Solo si NO es una fila de datos: en el reporte de transacciones
-      // la columna «Estado» trae los valores «Entrada» y «Salida», y
-      // tomar esa fila por encabezado se comía la marca.
-      if (!esDato && r.some(c => /entrada|primer|salida|[úu]ltim|check\s*(in|out)/i.test(txt(c)))){
+      // Tiene que ser una fila de rótulos de verdad: varias celdas con
+      // texto y ninguna en la columna del código. Dos trampas reales:
+      //  · el título del reporte es «Primero & Último», una sola celda
+      //    que trae las dos palabras y apuntaba las dos columnas a la 0;
+      //  · en el reporte de transacciones la columna «Estado» trae los
+      //    valores «Entrada» y «Salida» como DATOS, no como rótulos.
+      const llenas = r.filter(c => txt(c)).length;
+      if (!esDato && llenas >= 3 &&
+          r.some(c => /entrada|primer|salida|[úu]ltim|check\s*(in|out)/i.test(txt(c)))){
+        let e = null, s = null;
         r.forEach((c, i) => {
+          if (i === 0) return;                 // la 0 es el código, nunca una hora
           const n = txt(c);
-          if (colEnt == null && /entrada|primer|check\s*in/i.test(n))      colEnt = i;
-          if (/salida|[úu]ltim|check\s*out/i.test(n) && colSal == null)    colSal = i;
+          if (e == null && /entrada|primer|check\s*in/i.test(n))   e = i;
+          if (s == null && /salida|[úu]ltim|check\s*out/i.test(n)) s = i;
         });
+        // BioTime repite el encabezado en cada bloque de día: el último
+        // que se lea manda, y uno incompleto no pisa al anterior.
+        if (e != null || s != null){ colEnt = e; colSal = s; }
         continue;
       }
       // Otros encabezados y totales
@@ -3482,6 +3557,25 @@ const Horario = (() => {
     return out;
   }
 
+  /* Después de importar: en qué semanas quedaron las marcas, con un
+     botón para ir a cada una. */
+  function repartoSemanas(marcas){
+    const sem = semanasDe(marcas);
+    const actual = iso(lunes);
+    if (sem.length === 1 && sem[0].lunes === actual) return '';
+    return `<div style="margin-top:1rem">
+      <div class="fg-lbl">En qué semanas quedaron</div>
+      ${sem.map(s => `<div style="display:flex;align-items:center;gap:10px;
+                                  padding:6px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;font-size:12px">${rotulo(s.lunes)}
+          <span style="color:var(--text3)">· ${s.marcas} marca${s.marcas===1?'':'s'}</span></div>
+        ${s.lunes === actual
+          ? '<span class="badge b-ok">acá estás</span>'
+          : `<button class="btn btn-s btn-xs" data-ir-semana="${s.lunes}">Ir a esa semana</button>`}
+      </div>`).join('')}
+    </div>`;
+  }
+
   async function subirMarcas(marcas, nombreArchivo){
     const { el, cerrar } = modal({
       titulo: 'Importando marcas',
@@ -3516,9 +3610,18 @@ const Horario = (() => {
           Las repetidas se descartan solas, así que podés volver a cargar el mismo
           archivo sin que se duplique nada.</div>` : ''}
         ${huerfanas}
+        ${repartoSemanas(marcas)}
         <div class="abar" style="justify-content:flex-end">
           <button class="btn btn-p" id="imp-ok">Ver el horario</button>
         </div>`;
+      // Si las marcas cayeron en otra semana, un botón para ir a verlas:
+      // importar y quedarse mirando una semana vacía despista.
+      el.querySelectorAll('[data-ir-semana]').forEach(b => {
+        b.onclick = () => {
+          lunes = new Date(b.dataset.irSemana + 'T12:00:00');
+          cerrar(); cargar();
+        };
+      });
       el.querySelector('#imp-ok').onclick = () => { cerrar(); cargar(); };
     }catch(err){
       el.querySelector('.modal-cuerpo').innerHTML =
