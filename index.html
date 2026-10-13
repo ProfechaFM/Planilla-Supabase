@@ -279,6 +279,25 @@ tbody tr:hover td{background:var(--bg)}
 .cfg-cambio del{color:var(--danger);text-decoration:line-through}
 .cfg-cambio ins{color:var(--accent);text-decoration:none;font-weight:600}
 
+/* ── Estado del reloj (Inicio) ───────────────────────────────────── */
+.reloj{margin-bottom:1rem;padding:12px 14px}
+.reloj-fila{display:flex;gap:11px;align-items:flex-start}
+.reloj-luz{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.reloj-txt{min-width:0}
+.reloj-tit{font-size:13px;font-weight:600}
+.reloj-det{font-size:11.5px;color:var(--text2);line-height:1.55;margin-top:2px}
+.reloj-nota{font-size:11.5px;line-height:1.55;margin-top:9px;padding:8px 10px;
+            border-radius:var(--rs);background:var(--warn-l);color:var(--warn)}
+.reloj.ok{border-color:#bcdcc8;background:var(--accent-l)}
+.reloj.ok   .reloj-luz{background:var(--accent)}
+.reloj.ok   .reloj-tit{color:var(--accent)}
+.reloj.warn{border-color:#e9c88a;background:var(--warn-l)}
+.reloj.warn .reloj-luz{background:var(--warn)}
+.reloj.warn .reloj-tit{color:var(--warn)}
+.reloj.err{border-color:#e8c5c2;background:var(--danger-l)}
+.reloj.err  .reloj-luz{background:var(--danger)}
+.reloj.err  .reloj-tit{color:var(--danger)}
+
 </style>
 </head>
 <body>
@@ -364,6 +383,9 @@ tbody tr:hover td{background:var(--bg)}
         <div class="page-title">Inicio</div>
         <div class="page-sub" id="ini-fecha"></div>
       </div>
+
+      <!-- Estado del reloj. Oculto hasta que el agente esté instalado. -->
+      <div class="card reloj" id="ini-reloj" style="display:none"></div>
 
       <div class="card" style="margin-bottom:1rem">
         <div class="card-title" id="ini-semana-cab">Última semana</div>
@@ -2102,6 +2124,29 @@ const DB = (() => {
     return data;
   }
 
+  /* ── Cómo va el reloj ─────────────────────────────────────────────
+     Devuelve null si el agente todavía no está instalado (la vista no
+     existe o no hay ni una corrida). Eso NO es un error: hasta que
+     Gabriel corra el query 22 y prenda el agente, la app sigue igual
+     que siempre, con el archivo a mano. Por eso este caso se tiene
+     que tragar el error en vez de ensuciar el tablero.             */
+  async function estadoReloj(){
+    try{
+      const { data, error } = await cli.from('v_estado_sincronizacion')
+        .select('*').maybeSingle();
+      if (error){
+        const noExiste = /does not exist|relation|schema cache|PGRST20/i
+          .test(error.message || '') || error.code === '42P01';
+        if (noExiste) return null;         // el agente no está instalado
+        throw error;
+      }
+      return data;                          // null si no hay corridas
+    }catch(err){
+      console.warn('[reloj] no se pudo leer el estado:', err.message);
+      return null;
+    }
+  }
+
   async function ultimasSemanas(n = 6){
     const { data, error } = await cli.from('v_planilla_por_mes')
       .select('*').order('anio_mes', { ascending:false }).limit(n);
@@ -2125,7 +2170,8 @@ const DB = (() => {
 
   return {
     cli, sesion, entrar, salir, alCambiarSesion,
-    todas, empleados, horario, planilla, resumen, ultimasSemanas, config, guardarConfig,
+    todas, empleados, horario, planilla, resumen, ultimasSemanas, estadoReloj,
+    config, guardarConfig,
     vacaciones, incapacidades, rebajos, historial,
     liquidaciones, salon, constancias
   };
@@ -2377,14 +2423,16 @@ const Inicio = (() => {
       { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
 
     try{
-      const [res, ms, sems] = await Promise.all([
+      const [res, ms, sems, reloj] = await Promise.all([
         DB.resumen(),
         DB.historial.porMes(),
-        DB.historial.semanas()
+        DB.historial.semanas(),
+        DB.estadoReloj()
       ]);
       meses   = (ms   || []).slice().sort((a,b) => a.anio_mes.localeCompare(b.anio_mes));
       semanas = (sems || []).slice().sort((a,b) => a.semana.localeCompare(b.semana));
 
+      pintarReloj(reloj);
       pintarSemana();
       pintarMes();
       pintarGraficos();
@@ -2400,6 +2448,85 @@ const Inicio = (() => {
       toast('No se pudo cargar el tablero: ' + err.message, 'err', 6000);
       App.marcarConexion(false, 'Error de lectura');
     }
+  }
+
+  /* ── Cómo va el reloj ─────────────────────────────────────────────
+     Una alimentación automática que se cae en silencio es PEOR que
+     subir el archivo a mano: con el archivo uno sabe que no lo subió;
+     con el agente caído uno cree que la planilla está al día y no lo
+     está. Así que esta tira no es un adorno, es la alarma.
+
+     Si el agente no está instalado, no se muestra nada: la app sigue
+     funcionando con el archivo igual que antes.                     */
+  const AVISO_MIN = 90;    // más de hora y media sin corridas: algo pasa
+
+  function pintarReloj(e){
+    const caja = $('ini-reloj');
+    if (!caja) return;
+
+    if (!e){                       // sin agente instalado
+      caja.style.display = 'none';
+      return;
+    }
+    caja.style.display = '';
+
+    const min = Math.max(0, Math.round(Number(e.hace_minutos) || 0));
+    const hace = (() => {
+      if (min < 1)  return 'hace menos de un minuto';
+      if (min < 60) return `hace ${min} ${min === 1 ? 'minuto' : 'minutos'}`;
+      if (min < 1440){
+        const h = Math.floor(min/60), m = min % 60;
+        return `hace ${h} h` + (m ? ` ${m} min` : '');
+      }
+      const d = Math.floor(min/1440);
+      return `hace ${d} ${d === 1 ? 'día' : 'días'}`;
+    })();
+
+    const frio  = min > AVISO_MIN;
+    const falla = !!e.error;
+    const estado = falla ? 'err' : frio ? 'warn' : 'ok';
+
+    const titulo = falla ? 'El reloj está dando error'
+                 : frio  ? 'El reloj no manda marcas desde hace rato'
+                         : 'El reloj está alimentando la planilla';
+
+    const detalle = falla
+      ? esc(e.error)
+      : `Última vez: ${hace}` +
+        (e.corridas_24h ? ` · ${e.corridas_24h} ${
+          e.corridas_24h == 1 ? 'corrida' : 'corridas'} en 24 h` : '') +
+        (e.desde && e.hasta ? ` · trajo del ${fmtFecha(e.desde)} al ${fmtFecha(e.hasta)}` : '') +
+        ` · ${e.recibidas ?? 0} marcas, ${e.nuevas ?? 0} ${
+          Number(e.nuevas) === 1 ? 'nueva' : 'nuevas'}`;
+
+    // Lo que hay que hacer, no solo lo que pasó. Si está frío, el
+    // problema casi siempre es el server apagado; si hay códigos sin
+    // empleado, son marcas que se están guardando sin dueño.
+    const queHacer = falla
+      ? 'Revisá el archivo agente.log en el server del POS.'
+      : frio
+      ? 'Puede ser que el server del POS esté apagado o sin internet. ' +
+        'Mientras tanto el horario se puede subir con el archivo, como siempre.'
+      : '';
+
+    const huerfanas = Number(e.sin_empleado) > 0
+      ? `<div class="reloj-nota">${e.sin_empleado} código${
+          e.sin_empleado == 1 ? '' : 's'} del reloj sin empleado dado de alta:
+         esas marcas se están guardando pero no entran en ninguna planilla.
+         Se acomodan solas en cuanto les asignés el ID.</div>`
+      : '';
+
+    caja.className = 'card reloj ' + estado;
+    caja.innerHTML = `
+      <div class="reloj-fila">
+        <span class="reloj-luz"></span>
+        <div class="reloj-txt">
+          <div class="reloj-tit">${titulo}</div>
+          <div class="reloj-det">${detalle}</div>
+          ${queHacer ? `<div class="reloj-det">${queHacer}</div>` : ''}
+        </div>
+      </div>
+      ${huerfanas}`;
   }
 
   /* ── La semana ───────────────────────────────────────────────── */
