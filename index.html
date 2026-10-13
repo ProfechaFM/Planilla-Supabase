@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-12
+  Armado el 2026-10-13
 -->
 <html lang="es">
 <head>
@@ -444,6 +444,28 @@ tbody tr:hover td{background:var(--bg)}
           Movete con las flechas o con Tab.
         </div>
       </div>
+
+      <!-- Acuerdos especiales de la semana -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    gap:10px;flex-wrap:wrap;margin-bottom:.4rem">
+          <div class="card-title" style="margin-bottom:0">Acuerdos especiales</div>
+          <button class="btn btn-s" id="ho-ac-nuevo">Registrar un acuerdo</button>
+        </div>
+        <p class="ayuda" style="margin-bottom:.8rem">
+          Un acuerdo cambia cómo se paga un día puntual. <strong>2× Doble</strong>
+          paga ese día al doble sin bajar el tope de 48 h; <strong>Ordinario</strong>
+          lo paga a tarifa base y sí ocupa lugar dentro de las 48.
+          Solo se registran a quien trabajó los siete días.
+        </p>
+        <div class="tab-wrap"><table style="font-size:12px">
+          <thead><tr><th>ID</th><th>Empleado</th><th>Día</th><th>Fecha</th>
+                     <th>Modo</th><th>Nota</th><th></th></tr></thead>
+          <tbody id="ho-ac-body">
+            <tr><td colspan="7" class="vacio">Sin acuerdos esta semana</td></tr>
+          </tbody>
+        </table></div>
+      </div>
     </section>
 
     <!-- ── Planilla ────────────────────────────────────────────── -->
@@ -843,6 +865,7 @@ tbody tr:hover td{background:var(--bg)}
       </div>
 
       <div id="hi-panel-semanas">
+        <div id="hi-sin-guardar"></div>
         <div class="card">
           <div class="tab-wrap"><table>
             <thead><tr>
@@ -1609,6 +1632,16 @@ const DB = (() => {
         .select('*').eq('lunes', semana).maybeSingle();
       if (error) throw error;
       return data;
+    },
+
+    // Todas las semanas que existen, estén calculadas o no. Una semana
+    // nace cuando se importan marcas; pasa a 'calculada' al guardar la
+    // planilla. La diferencia entre las dos listas es lo que falta.
+    async todasLasSemanas(){
+      const { data, error } = await cli.from('semanas')
+        .select('lunes, estado').order('lunes', { ascending:false });
+      if (error) throw error;
+      return data || [];
     }
   };
 
@@ -2054,7 +2087,7 @@ const App = (() => {
 
   /* La fecha de armado. armar.js la reemplaza al generar el archivo
      único, para saber de un vistazo qué versión está subida. */
-  const VERSION = '2026-10-12';
+  const VERSION = '2026-10-13';
 
   /* ── Utilidades ──────────────────────────────────────────────── */
   const $  = id => document.getElementById(id);
@@ -3011,6 +3044,7 @@ const Horario = (() => {
   let jornadas   = {};   // 'empId|YYYY-MM-DD' → {entrada, salida, editado_manual, marcas_count}
   let feriados   = {};   // 'YYYY-MM-DD' → nombre
   let guardando  = {};   // para no pisar guardados en vuelo
+  let acuerdos   = [];   // acuerdos especiales de la semana en pantalla
 
   /* ── Fechas ──────────────────────────────────────────────────── */
   function lunesDe(d){
@@ -3059,10 +3093,11 @@ const Horario = (() => {
     $('ho-body').innerHTML = `<tr><td colspan="9" class="vacio">Cargando…</td></tr>`;
     try{
       const desde = iso(lunes), hasta = iso(masDias(lunes,6));
-      const [emps, jrs, fers] = await Promise.all([
+      const [emps, jrs, fers, acs] = await Promise.all([
         DB.empleados.listar(),
         DB.horario.jornadasDeSemana(desde),
-        DB.horario.feriados(desde, hasta)
+        DB.horario.feriados(desde, hasta),
+        DB.horario.acuerdos(desde, hasta)
       ]);
       // El 999 es "OTROS MONTOS", no una persona: no marca en el reloj
       empleados = emps.filter(e => e.codigo_reloj !== 999);
@@ -3070,7 +3105,9 @@ const Horario = (() => {
       jrs.forEach(j => { jornadas[j.empleado_id + '|' + j.fecha] = j; });
       feriados = {};
       fers.forEach(f => { feriados[f.fecha] = f.nombre || 'Feriado'; });
+      acuerdos = acs || [];
       pintar();
+      pintarAcuerdos();
     }catch(err){
       $('ho-body').innerHTML = `<tr><td colspan="9" class="vacio">
         No se pudo cargar: ${esc(err.message)}</td></tr>`;
@@ -3138,14 +3175,33 @@ const Horario = (() => {
 
     // Avisos
     const incompletas = Object.values(jornadas).filter(j => j.entrada != null && j.salida == null);
-    $('ho-avisos').innerHTML = incompletas.length
-      ? `<div class="alert alert-warn">
+    const avisos = [];
+    if (incompletas.length)
+      avisos.push(`<div class="alert alert-warn">
            <span>⚠</span>
            <div><strong>${incompletas.length} día(s) con una sola marca.</strong>
            Salen en rojo: alguien marcó al entrar pero no al salir, o al revés.
            Completalos a mano para que el cálculo salga bien.</div>
-         </div>`
-      : '';
+         </div>`);
+
+    // Quien trabajó los siete días puede tener acuerdo. Es el aviso que
+    // no hay que depender de acordarse: si se pasa, la semana se paga
+    // de menos y nadie lo nota hasta que la persona reclama.
+    const sieteDias = quienesTrabajaronSiete();
+    const sinAcuerdo = sieteDias.filter(e => !acuerdos.some(a => a.empleado_id === e.id));
+    if (sinAcuerdo.length)
+      avisos.push(`<div class="alert alert-warn">
+           <span>7</span>
+           <div><strong>${sinAcuerdo.length === 1 ? 'Trabajó' : 'Trabajaron'}
+           los siete días:</strong> ${sinAcuerdo.map(e => esc(nombreCorto(e))).join(', ')}.
+           Revisá si les toca acuerdo especial.
+           <button class="btn btn-s btn-xs" id="ho-ir-acuerdo"
+                   style="margin-left:8px">Registrar acuerdo</button></div>
+         </div>`);
+
+    $('ho-avisos').innerHTML = avisos.join('');
+    const btnAc = $('ho-ir-acuerdo');
+    if (btnAc) btnAc.onclick = () => nuevoAcuerdo();
 
     // Conectar los campos
     $('ho-body').querySelectorAll('.hora-inp').forEach(inp => {
@@ -3238,6 +3294,154 @@ const Horario = (() => {
       toast(marcado ? 'Marcado como feriado' : 'Ya no es feriado', 'ok', 2000);
     }catch(err){
       toast('No se pudo: ' + err.message, 'err');
+    }
+  }
+
+  /* ── Acuerdos especiales ─────────────────────────────────────────
+     Un acuerdo cambia cómo se paga UN día puntual de UNA persona. No
+     es una corrección de marcas: es una decisión, y por eso vive en su
+     propia tabla y no toca el horario.
+
+     La regla es la misma de la app de Sheets: solo a quien trabajó los
+     siete días. Un acuerdo a alguien que libró es casi siempre un
+     error de dedo, y en plata se nota.
+
+     El motor ya los calcula desde hace rato — lo que faltaba era por
+     dónde registrarlos.                                            */
+
+  const MODOS = {
+    doble    : { etiqueta:'2× Doble',
+                 ayuda:'Ese día se paga al doble. No baja el tope de 48 h, ' +
+                       'así que las horas ordinarias de la semana quedan enteras.' },
+    ordinario: { etiqueta:'Ordinario',
+                 ayuda:'Ese día se paga a tarifa base y nunca se vuelve extra, ' +
+                       'pero sí ocupa lugar dentro de las 48 h.' }
+  };
+
+  const nombreCorto = e => {
+    const p = String(e.nombre || '').trim().split(/\s+/);
+    return p.length > 2 ? p[0] + ' ' + p[1] : (e.nombre || '');
+  };
+
+  // Trabajó los siete días: los siete con entrada y salida completas.
+  function quienesTrabajaronSiete(){
+    return empleados.filter(e => {
+      for (let d = 0; d < 7; d++){
+        const j = jornadas[e.id + '|' + iso(masDias(lunes, d))];
+        if (!j || j.entrada == null || j.salida == null) return false;
+      }
+      return true;
+    });
+  }
+
+  function pintarAcuerdos(){
+    const cuerpo = $('ho-ac-body');
+    if (!cuerpo) return;
+    if (!acuerdos.length){
+      cuerpo.innerHTML =
+        '<tr><td colspan="7" class="vacio">Sin acuerdos esta semana</td></tr>';
+      return;
+    }
+    const orden = acuerdos.slice().sort((a,b) =>
+      (a.empleados?.codigo_reloj ?? 9999) - (b.empleados?.codigo_reloj ?? 9999) ||
+      a.fecha.localeCompare(b.fecha));
+
+    cuerpo.innerHTML = orden.map(a => {
+      const f = new Date(a.fecha + 'T12:00:00');
+      const m = MODOS[a.modo] || { etiqueta:a.modo };
+      return `<tr>
+        <td>${a.empleados?.codigo_reloj ?? '—'}</td>
+        <td>${esc(a.empleados?.nombre || '—')}</td>
+        <td>${DIAS[(f.getDay() + 6) % 7]}</td>
+        <td style="font-family:'DM Mono',monospace">${esc(a.fecha)}</td>
+        <td><span class="badge ${a.modo === 'doble' ? 'b-tr' : 'b-ef'}">${
+          esc(m.etiqueta)}</span></td>
+        <td class="ayuda">${esc(a.nota || '')}</td>
+        <td style="text-align:right"><button class="btn btn-s btn-xs"
+            data-borrar-ac="${a.id}">Quitar</button></td>
+      </tr>`;
+    }).join('');
+
+    cuerpo.querySelectorAll('[data-borrar-ac]').forEach(b => {
+      b.onclick = () => borrarAcuerdo(b.dataset.borrarAc);
+    });
+  }
+
+  function nuevoAcuerdo(){
+    const siete = quienesTrabajaronSiete();
+    if (!siete.length)
+      return toast('Nadie trabajó los siete días esta semana, así que no hay ' +
+                   'a quién registrarle un acuerdo', 'warn', 6000);
+
+    const m = modal({ titulo:'Registrar un acuerdo especial', ancho:'520px', cuerpo:`
+      <div class="fg"><label>Empleado</label>
+        <select id="ac-emp">
+          ${siete.map(e => `<option value="${e.id}">${
+            e.codigo_reloj ?? '—'} · ${esc(e.nombre)}</option>`).join('')}
+        </select>
+        <p class="ayuda" style="margin-top:4px">Solo aparece quien trabajó los
+          siete días de esta semana.</p>
+      </div>
+      <div class="fg" style="margin-top:.8rem"><label>Día</label>
+        <select id="ac-dia">
+          ${DIAS.map((d,i) => {
+            const f = masDias(lunes, i);
+            return `<option value="${iso(f)}"${i === 6 ? ' selected' : ''}>${
+              d} ${f.getDate()}/${f.getMonth()+1}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="fg" style="margin-top:.8rem"><label>Cómo se paga ese día</label>
+        <select id="ac-modo">
+          ${Object.entries(MODOS).map(([k,v]) =>
+            `<option value="${k}">${v.etiqueta}</option>`).join('')}
+        </select>
+        <p class="ayuda" id="ac-ayuda" style="margin-top:4px">${MODOS.doble.ayuda}</p>
+      </div>
+      <div class="fg" style="margin-top:.8rem"><label>Nota (opcional)</label>
+        <input id="ac-nota" placeholder="Por qué se acordó" maxlength="120"></div>
+      <div class="abar" style="justify-content:flex-end">
+        <button class="btn btn-s" id="ac-x">Cancelar</button>
+        <button class="btn btn-p" id="ac-ok">Guardar acuerdo</button>
+      </div>`});
+
+    const sel = m.el.querySelector('#ac-modo');
+    sel.onchange = () => {
+      m.el.querySelector('#ac-ayuda').textContent = MODOS[sel.value].ayuda;
+    };
+    m.el.querySelector('#ac-x').onclick = m.cerrar;
+    m.el.querySelector('#ac-ok').onclick = async () => {
+      const empleado_id = m.el.querySelector('#ac-emp').value;
+      const fecha = m.el.querySelector('#ac-dia').value;
+      const modo  = sel.value;
+      const nota  = m.el.querySelector('#ac-nota').value.trim();
+
+      const repetido = acuerdos.find(a => a.empleado_id === empleado_id && a.fecha === fecha);
+      if (repetido && !confirm('Esa persona ya tiene un acuerdo ese día. ¿Reemplazarlo?'))
+        return;
+
+      try{
+        await DB.horario.guardarAcuerdo({ empleado_id, fecha, modo, nota });
+        m.cerrar();
+        toast('Acuerdo guardado. Recalculá la planilla para verlo aplicado.', 'ok', 5000);
+        await cargar();
+      }catch(err){
+        toast('No se pudo guardar: ' + err.message, 'err', 6000);
+      }
+    };
+  }
+
+  async function borrarAcuerdo(id){
+    const a = acuerdos.find(x => String(x.id) === String(id));
+    if (!a) return;
+    if (!confirm(`¿Quitar el acuerdo de ${a.empleados?.nombre || 'esta persona'} ` +
+                 `del ${a.fecha}?\n\nLa semana se recalcula sin él.`)) return;
+    try{
+      await DB.horario.borrarAcuerdo(a.id);
+      toast('Acuerdo quitado. Recalculá la planilla.', 'ok', 5000);
+      await cargar();
+    }catch(err){
+      toast('No se pudo quitar: ' + err.message, 'err', 6000);
     }
   }
 
@@ -3643,6 +3847,7 @@ const Horario = (() => {
     $('ho-sig').addEventListener('click', () => moverSemana(1));
     $('ho-hoy').addEventListener('click', semanaActual);
     $('ho-cargar').addEventListener('click', elegirArchivo);
+    $('ho-ac-nuevo').addEventListener('click', () => nuevoAcuerdo());
     $('ho-archivo').addEventListener('change', ev => leerArchivo(ev.target));
     $('ho-buscar').addEventListener('input', pintar);
   }
@@ -3742,10 +3947,14 @@ const Planilla = (() => {
       acuerdosSemana = acs;
 
       const cfg = App.estado.cfg.nomina || {};
-      // El 999 (OTROS MONTOS) no sale del horario: se maneja aparte
-      const paraCalcular = emps.filter(e => e.codigo_reloj !== 999);
 
-      resultados = Calculo.calcularPlanilla(paraCalcular, jornadas, feriados,
+      // El 999 (OTROS MONTOS) no es una persona: no marca en el reloj y
+      // no cotiza. Pero sí es plata que hay que sacar del banco, así que
+      // entra al cálculo como cualquiera: sin horario no suma horas y se
+      // queda con su monto fijo, en efectivo y sin CCSS. Estaba
+      // excluido acá, y por eso no aparecía en el total de efectivo ni
+      // en el desglose de billetes.
+      resultados = Calculo.calcularPlanilla(emps, jornadas, feriados,
                                             lunes, cfg, acuerdos);
 
       // Vacaciones canceladas, incapacidades y cuotas de rebajo entran
@@ -4229,7 +4438,7 @@ const Planilla = (() => {
     </div>`;
   }
 
-  function portada(titulo, periodo, cuantos, total){
+  function portada(titulo, periodo, cuantos){
     const emp = App.estado.cfg.empresa || {};
     return `<div class="portada">
       ${emp.logo ? `<img src="${esc(emp.logo)}" alt="">` : ''}
@@ -4237,8 +4446,7 @@ const Planilla = (() => {
       <h1>${esc(emp.nombre_comercial || 'La Fiesta del Maíz')}</h1>
       <div class="p-sub">${esc(titulo)}</div>
       <div class="p-periodo">${periodo}</div>
-      <div class="p-datos">${cuantos} ${cuantos === 1 ? 'comprobante' : 'comprobantes'}
-        · ${fmtMon(total)}</div>
+      <div class="p-datos">${cuantos} ${cuantos === 1 ? 'comprobante' : 'comprobantes'}</div>
       <div class="p-pie">Documento confidencial · Uso interno</div>
     </div>`;
   }
@@ -4258,7 +4466,6 @@ const Planilla = (() => {
       return;
     }
 
-    const total = lista.reduce((s,r) => s + r.neto, 0);
     const titulo = soloCCSS ? 'Planilla semanal — personal asegurado CCSS'
                             : 'Planilla semanal de pago';
 
@@ -4284,8 +4491,13 @@ const Planilla = (() => {
   .p-datos{ font-size:11px; color:#666; margin-top:.8rem }
   .p-pie{ margin-top:auto; font-size:9px; color:#999 }
 
-  /* ── Hoja de comprobantes ── */
+  /* ── Hoja de comprobantes ──
+     Angostos y centrados, como los de la app vieja (allá era
+     max-width:72%). Queda aire a los lados para doblar y archivar, y
+     el comprobante se lee de un vistazo en vez de tener el monto a
+     veinte centímetros del nombre.                                 */
   .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.8cm }
+  .tira{ width:14.4cm; margin:0 auto }
 
   /* Cuatro por página carta. La altura es fija para que el corte
      caiga siempre en el mismo lugar y las tijeras no adivinen:
@@ -4359,8 +4571,9 @@ const Planilla = (() => {
     lista.length === 1 ? 'persona' : 'personas'}</span>
   <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
 </div>
-${portada(titulo, periodo, lista.length, total)}
-<div class="hoja">${lista.map(r => unComprobante(r, periodo)).join('')}</div>
+${portada(titulo, periodo, lista.length)}
+<div class="hoja"><div class="tira">${
+  lista.map(r => unComprobante(r, periodo)).join('')}</div></div>
 <script>
 /* Ajusta cada comprobante antes de imprimir: si el detalle no entra en
    los 6.4 cm, aprieta la letra por pasos; si ni así entra, deja crecer
@@ -4391,6 +4604,12 @@ ${portada(titulo, periodo, lista.length, total)}
 
   /* ── Navegación ──────────────────────────────────────────────── */
   function moverSemana(n){ lunes = masDias(lunes, n*7); calcular(); }
+
+  // Para que otras pantallas puedan mandar a calcular una semana puntual
+  function irASemana(iso){
+    lunes = lunesDe(new Date(iso + 'T12:00:00'));
+    calcular();
+  }
   function verPestana(p){ pestana = p; pintar(); }
 
   function registrar(){
@@ -4411,7 +4630,7 @@ ${portada(titulo, periodo, lista.length, total)}
   // la de hoy: así se puede registrar algo en una semana anterior.
   function semanaActual(){ return iso(lunes); }
 
-  return { registrar, calcular, semanaActual };
+  return { registrar, calcular, semanaActual, irASemana };
 })();
 
 App.registrarModulo(Planilla.registrar);
@@ -5292,7 +5511,7 @@ App.registrarModulo(Rebajos.registrarModulo);
 const Historial = (() => {
   const { $, esc, fmtMon, fmtFecha, toast, modal } = App;
 
-  let semanas = [], meses = [], pestana = 'semanas';
+  let semanas = [], meses = [], pestana = 'semanas', sinGuardar = [];
   let aguinaldo = null;
   let reporte = null;
 
@@ -5304,10 +5523,22 @@ const Historial = (() => {
 
   async function cargar(){
     try{
-      [semanas, meses] = await Promise.all([
+      let todas;
+      [semanas, meses, todas] = await Promise.all([
         DB.historial.semanas(),
-        DB.historial.porMes()
+        DB.historial.porMes(),
+        DB.planilla.todasLasSemanas().catch(() => [])
       ]);
+      // Una semana con horario cargado pero sin planilla guardada no
+      // aparece en ningún lado: ni acá, ni en el reporte, ni en el
+      // aguinaldo. Es un hueco silencioso que solo se descubre en
+      // diciembre, así que se avisa.
+      const guardadas = new Set(semanas.map(s => s.semana));
+      const hoy = new Date().toISOString().split('T')[0];
+      sinGuardar = todas
+        .filter(s => !guardadas.has(s.lunes) && s.lunes <= hoy)
+        .sort((a,b) => b.lunes.localeCompare(a.lunes));
+
       llenarAnios();
       llenarMesesReporte();
       pintar();
@@ -5339,8 +5570,42 @@ const Historial = (() => {
       $('hi-tab-'+p).className = 'btn ' + (pestana === p ? 'btn-p' : 'btn-s');
       $('hi-panel-'+p).style.display = pestana === p ? '' : 'none';
     });
-    if (pestana === 'semanas') pintarSemanas();
+    if (pestana === 'semanas'){ pintarSinGuardar(); pintarSemanas(); }
     if (pestana === 'meses')   pintarMeses();
+  }
+
+  /* El historial, el reporte mensual y el aguinaldo salen todos de las
+     planillas GUARDADAS. Calcular una semana no basta: si no se guarda,
+     para la app esa semana no existe. Y eso no se descubre hasta que
+     hay que pagar un aguinaldo o liquidar a alguien, cuando ya es
+     tarde para acordarse de qué pasó en agosto.                     */
+  function pintarSinGuardar(){
+    const caja = $('hi-sin-guardar');
+    if (!caja) return;
+    if (!sinGuardar.length){ caja.innerHTML = ''; return; }
+
+    const lista = sinGuardar.slice(0, 12).map(s => {
+      const d = new Date(s.lunes + 'T12:00:00');
+      const f = new Date(d); f.setDate(f.getDate() + 6);
+      return `<button class="btn btn-s btn-xs" data-ir-pl="${s.lunes}"
+                style="margin:2px 4px 2px 0">${
+                d.getDate()}/${d.getMonth()+1} al ${f.getDate()}/${f.getMonth()+1}</button>`;
+    }).join('');
+
+    caja.innerHTML = `<div class="alert alert-warn" style="margin-bottom:1rem">
+      <span>⚠</span>
+      <div>
+        <strong>${sinGuardar.length} semana${sinGuardar.length === 1 ? '' : 's'}
+        con horario cargado y sin planilla guardada.</strong>
+        No cuentan acá, ni en el reporte mensual, ni en el aguinaldo.
+        <div style="margin-top:.5rem">${lista}${
+          sinGuardar.length > 12 ? ` <span class="ayuda">y ${sinGuardar.length - 12} más</span>` : ''}</div>
+      </div>
+    </div>`;
+
+    caja.querySelectorAll('[data-ir-pl]').forEach(b => {
+      b.onclick = () => { App.ir('planilla'); Planilla.irASemana(b.dataset.irPl); };
+    });
   }
 
   function pintarSemanas(){
@@ -5786,14 +6051,24 @@ const Salon = (() => {
   // Una semana nueva arranca con el equipo fijo. Adivinar por el campo
   // «departamento» fallaba por los dos lados: hay ayudantes de cocina
   // que siempre entran, y gente de salón que esa semana no toca.
+  /* Una semana nueva arranca con el equipo fijo. Los saloneros que
+     cobran por horas vienen con 8 h de lunes a domingo, que es la
+     jornada normal: lo común es confirmarlas, no escribirlas. Lo que
+     se cambie a mano manda y nunca se vuelve a pisar. Los demás
+     arrancan en cero. */
+  const PRELLENADO_SALONERO = [8,8,8,8,8,8,8];
+
   function precargar(){
-    filas = plantilla.map(p => ({
-      empleado_id: p.empleado_id, rol: p.rol,
-      modo: p.modo || (p.rol === 'ayudante' ? 'monto' : 'horas'),
-      titular:false,
-      valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
-      nombre: p.nombre, codigo_reloj: p.codigo_reloj
-    }));
+    filas = plantilla.map(p => {
+      const modo = p.modo || (p.rol === 'ayudante' ? 'monto' : 'horas');
+      const porHora = modo === 'horas' && p.rol === 'salonero';
+      return {
+        empleado_id: p.empleado_id, rol: p.rol, modo, titular:false,
+        valores: porHora ? PRELLENADO_SALONERO.slice() : [0,0,0,0,0,0,0],
+        monto_calculado:0, monto_ajustado:'',
+        nombre: p.nombre, codigo_reloj: p.codigo_reloj
+      };
+    });
     if (!filas.length){
       toast('El equipo de salón está vacío. Agregá a la gente con los botones: ' +
             'queda guardada y vuelve a salir todas las semanas.', 'warn', 7000);
@@ -5987,8 +6262,11 @@ const Salon = (() => {
       const fijo = m.el.querySelector('#ag-fijo').checked;
       const modo = m.el.querySelector('#ag-modo').value;
 
+      // Un salonero por horas arranca con la jornada normal de 8 h
+      const porHora = modo === 'horas' && rol === 'salonero';
       filas.push({ empleado_id:e.id, rol, modo, titular:false,
-        valores:[0,0,0,0,0,0,0], monto_calculado:0, monto_ajustado:'',
+        valores: porHora ? PRELLENADO_SALONERO.slice() : [0,0,0,0,0,0,0],
+        monto_calculado:0, monto_ajustado:'',
         nombre:e.nombre, codigo_reloj:e.codigo_reloj });
 
       if (fijo){
@@ -6169,29 +6447,13 @@ const Salon = (() => {
     </div>`;
   }
 
-  /* El detalle va en tira: los días como columnas, no como lista.
-     Así el comprobante mide lo mismo trabaje la persona dos días o
-     siete, que es lo que permite cortar siempre en el mismo lugar. */
+  /* A la derecha va solo quién cobra y cuánto. El desglose por día no
+     va: lo que hace entendible el monto es la bolsa de la izquierda —
+     lo que entró cada día— y el reparto es un cálculo interno que no
+     necesita ir en el papel que la persona firma. */
   function unComprobanteSalon(f, t, periodo){
     const emp = App.estado.cfg.empresa || {};
     const hrs = porHoras(f);
-    const cel = (txt, vacio) =>
-      `<td${vacio ? ' class="nada"' : ''}>${vacio ? '–' : txt}</td>`;
-
-    const encabezados = DIA_SEM.map((n,d) => {
-      const fe = masDias(lunes, d);
-      return `<th>${n}<i>${fe.getDate()}/${fe.getMonth()+1}</i></th>`;
-    }).join('');
-
-    const filaHoras = hrs ? `<tr class="h"><th>Horas</th>${
-      f.valores.map(v => cel(nz(v), !nz(v))).join('')}</tr>` : '';
-
-    const filaTarifa = hrs ? `<tr class="r"><th>Por hora</th>${
-      f.valores.map((v,d) => cel(fmtMon(t[d].porHora), !nz(v))).join('')}</tr>` : '';
-
-    const filaMonto = `<tr class="m"><th>Monto</th>${
-      f.valores.map((v,d) => cel(
-        fmtMon(hrs ? nz(v) * t[d].porHora : nz(v)), !nz(v))).join('')}</tr>`;
 
     return `<div class="comp">
       ${panelBolsa(periodo)}
@@ -6212,11 +6474,6 @@ const Salon = (() => {
             f.rol === 'salonero' ? 'Salonero' : 'Ayudante'} · ${
             hrs ? 'pago por horas' : 'monto fijo'}</div>
         </div>
-
-        <table class="dias">
-          <tr class="enc"><th></th>${encabezados}</tr>
-          ${filaHoras}${filaTarifa}${filaMonto}
-        </table>
 
         <div class="pie">
           <div class="neto">
@@ -6289,25 +6546,6 @@ const Salon = (() => {
   .nombre{ font-size:12.5px; font-weight:700; line-height:1.2 }
   .meta{ font-size:8.5px; color:#777 }
 
-  /* El detalle en tira: los días como columnas */
-  .dias{ width:100%; border-collapse:collapse; margin-top:5px;
-         font-size:9.5px; table-layout:fixed }
-  .dias th{ font-weight:600; text-align:right; padding:1.2px 3px }
-  .dias td{ text-align:right; padding:1.2px 3px;
-            font-family:'DM Mono',ui-monospace,monospace }
-  .dias .enc th{ font-size:8px; color:#8a8a8a; text-transform:uppercase;
-                 letter-spacing:.3px; border-bottom:1px solid #ddd;
-                 padding-bottom:2px; line-height:1.15 }
-  .dias .enc th i{ display:block; font-style:normal; font-weight:400;
-                   font-size:7.5px; letter-spacing:0 }
-  .dias tr:not(.enc) th{ text-align:left; font-size:8.5px; color:#777;
-                         text-transform:uppercase; letter-spacing:.3px;
-                         padding-left:0; width:2.1cm }
-  .dias tr:not(.enc) td{ border-bottom:1px solid #f2f0ec }
-  .dias .r td,.dias .r th{ color:#8a8a8a; font-size:8.5px }
-  .dias .m td{ font-weight:700 }
-  .dias .nada{ color:#c8c5bf }
-
   .pie{ margin-top:auto }
   .neto{ padding-top:5px; display:flex; align-items:baseline;
          justify-content:space-between; gap:10px; border-top:2px solid #2d5a3d }
@@ -6322,14 +6560,11 @@ const Salon = (() => {
   /* Si a alguien no le cabe —un nombre muy largo, la bolsa de los
      siete días— se aprieta la letra antes que cortar un dato; y si
      ni así entra, el recuadro crece.                              */
-  .comp.d1 .dias{ font-size:8.5px }
   .comp.d1 .bolsa table{ font-size:9px }
   .comp.d1 .bolsa td{ padding:1px 0 }
   .comp.d1 .nombre{ font-size:11.5px }
-  .comp.d2 .dias{ font-size:8px }
   .comp.d2 .bolsa table{ font-size:8.5px }
   .comp.d2 .neto strong{ font-size:13.5px }
-  .comp.d3 .dias{ font-size:7.5px }
   .comp.d3 .firmas{ margin-top:5px }
   .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
 
