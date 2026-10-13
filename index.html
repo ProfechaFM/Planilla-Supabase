@@ -1452,6 +1452,7 @@ const DB = (() => {
         tipo_pago    : emp.tipo_pago || 'efectivo',
         fecha_ingreso: emp.fecha_ingreso || null,
         nota         : emp.nota || null,
+        temporal     : !!emp.temporal,
         actualizado_en: new Date().toISOString()
       };
       if (emp.id){
@@ -1462,6 +1463,32 @@ const DB = (() => {
       }
       const { data, error } = await cli.from('empleados')
         .insert(fila).select().single();
+      if (error) throw error;
+      return data;
+    },
+
+    // Todos los temporales con lo que llevan trabajando
+    async temporales(){
+      const { data, error } = await cli.from('v_temporales')
+        .select('*').order('nombre');
+      if (error) throw error;
+      return data || [];
+    },
+
+    // Cuánto lleva trabajando un temporal, para decidir si ya se queda
+    async resumenTemporal(id){
+      const { data, error } = await cli.from('v_temporales')
+        .select('*').eq('empleado_id', id).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+
+    // Asignar el ID del reloj y quitarle la marca de temporal, de una
+    // sola vez. La función revisa que el ID esté libre y dice de quién
+    // es si no lo está.
+    async hacerFijo(id, codigo){
+      const { data, error } = await cli.rpc('hacer_fijo', {
+        p_empleado: id, p_codigo: codigo });
       if (error) throw error;
       return data;
     },
@@ -2795,6 +2822,7 @@ const Empleados = (() => {
   const { $, esc, fmtMon, fmtFecha, toast, modal } = App;
 
   let lista = [];
+  let temporales = {};   // empleado_id → cuánto lleva trabajando
   let verInactivos = false;
 
   const PAGOS = {
@@ -2808,6 +2836,14 @@ const Empleados = (() => {
     cuerpo.innerHTML = '<tr><td colspan="9" class="vacio">Cargando…</td></tr>';
     try{
       lista = await DB.empleados.listar({ incluirInactivos: verInactivos });
+      // Cuánto lleva cada temporal, para verlo en la lista sin tener
+      // que abrir a cada uno. Si falta el query 21, se sigue sin esto.
+      temporales = {};
+      if (lista.some(e => e.temporal)){
+        try{
+          (await DB.empleados.temporales()).forEach(t => { temporales[t.empleado_id] = t; });
+        }catch(err){ /* el query 21 todavía no está */ }
+      }
       pintar();
     }catch(err){
       cuerpo.innerHTML = `<tr><td colspan="9" class="vacio">
@@ -2830,9 +2866,15 @@ const Empleados = (() => {
       ? filtrados.map(e => {
           const [etq, clase] = PAGOS[e.tipo_pago] || PAGOS.efectivo;
           return `<tr${e.activo ? '' : ' style="opacity:.55"'}>
-            <td class="num" style="color:var(--text3);font-size:12px">${e.codigo_reloj ?? '—'}</td>
+            <td class="num" style="color:var(--text3);font-size:12px">${
+              e.temporal ? '<span class="badge b-warn">temp</span>' : (e.codigo_reloj ?? '—')}</td>
             <td style="font-weight:500">${esc(e.nombre)}
-              ${e.activo ? '' : ' <span class="badge b-off">inactivo</span>'}</td>
+              ${e.activo ? '' : ' <span class="badge b-off">inactivo</span>'}
+              ${e.temporal ? ' <span class="ayuda">a prueba, sin ID del reloj' +
+                (temporales[e.id] && temporales[e.id].semanas_pagadas
+                  ? ' · ' + temporales[e.id].semanas_pagadas +
+                    (temporales[e.id].semanas_pagadas == 1 ? ' semana' : ' semanas')
+                  : '') + '</span>' : ''}</td>
             <td style="font-size:12px;color:var(--text2)">${esc(e.puesto || '—')}</td>
             <td class="num">${e.hora_base ? fmtMon(e.hora_base) : '—'}</td>
             <td class="num">${e.fijo_semanal ? fmtMon(e.fijo_semanal) : '—'}</td>
@@ -2841,6 +2883,9 @@ const Empleados = (() => {
             <td style="font-size:12px;color:var(--text2)">${e.fecha_ingreso ? fmtFecha(e.fecha_ingreso) : '—'}</td>
             <td style="white-space:nowrap">
               <button class="btn btn-s btn-xs" data-editar="${e.id}">Editar</button>
+              ${e.temporal && e.activo
+                ? `<button class="btn btn-p btn-xs" data-fijo="${e.id}">Hacerlo fijo</button>`
+                : ''}
               <button class="btn ${e.activo ? 'btn-d' : 'btn-s'} btn-xs"
                       data-estado="${e.id}">${e.activo ? 'Desactivar' : 'Reactivar'}</button>
             </td>
@@ -2852,6 +2897,8 @@ const Empleados = (() => {
       b.onclick = () => abrirFicha(b.dataset.editar));
     $('emp-body').querySelectorAll('[data-estado]').forEach(b =>
       b.onclick = () => cambiarEstado(b.dataset.estado));
+    $('emp-body').querySelectorAll('[data-fijo]').forEach(b =>
+      b.onclick = () => hacerFijo(b.dataset.fijo));
   }
 
   function abrirFicha(id){
@@ -2869,6 +2916,17 @@ const Empleados = (() => {
           <div class="fg" style="grid-column:span 2"><label>Nombre completo</label>
             <input id="f-nombre" value="${v('nombre')}" required></div>
         </div>
+        <label class="opcion" style="margin-bottom:1rem">
+          <input type="checkbox" id="f-temporal"${e.temporal ? ' checked' : ''}>
+          <div>
+            <div class="op-tit">Empleado temporal — todavía sin ID del reloj</div>
+            <div class="op-txt">Para quien está a prueba. Cobra igual que cualquiera
+              —salario, horas, CCSS, efectivo o transferencia— y acumula vacaciones
+              desde el primer día; lo único es que sus horas se escriben a mano
+              porque no marca en el reloj. Cuando confirmés que se queda, le
+              asignás el ID desde la lista y queda fijo sin perder nada.</div>
+          </div>
+        </label>
         <div class="form-grid">
           <div class="fg"><label>Cédula</label>
             <input id="f-cedula" value="${v('cedula')}"></div>
@@ -2915,6 +2973,18 @@ const Empleados = (() => {
     el.querySelector('#f-ccss').value = e.ccss ? 'si' : 'no';
     setTimeout(() => el.querySelector('#f-nombre').focus(), 50);
 
+    // Temporal e ID del reloj son excluyentes: con la marca puesta, el
+    // campo del ID se apaga. Así no queda nadie a medio camino.
+    const chkTemp = el.querySelector('#f-temporal');
+    const inpCod  = el.querySelector('#f-codigo');
+    const sincronizar = () => {
+      inpCod.disabled = chkTemp.checked;
+      inpCod.style.opacity = chkTemp.checked ? '.45' : '';
+      if (chkTemp.checked) inpCod.value = '';
+    };
+    chkTemp.addEventListener('change', sincronizar);
+    sincronizar();
+
     el.querySelector('#f-cancelar').onclick = cerrar;
     el.querySelector('#f-guardar').onclick = async () => {
       const btn = el.querySelector('#f-guardar');
@@ -2926,9 +2996,11 @@ const Empleados = (() => {
       }
       btn.disabled = true; btn.textContent = 'Guardando…';
       try{
+        const esTemporal = el.querySelector('#f-temporal').checked;
         await DB.empleados.guardar({
           id           : e.id,
-          codigo_reloj : el.querySelector('#f-codigo').value,
+          temporal     : esTemporal,
+          codigo_reloj : esTemporal ? '' : el.querySelector('#f-codigo').value,
           nombre,
           cedula       : el.querySelector('#f-cedula').value.trim(),
           puesto       : el.querySelector('#f-puesto').value.trim(),
@@ -2961,6 +3033,79 @@ const Empleados = (() => {
         msg.innerHTML = `<div class="alert alert-err">${texto}</div>`;
         btn.disabled = false;
         btn.textContent = nuevo ? 'Crear empleado' : 'Guardar cambios';
+      }
+    };
+  }
+
+  /* ── Pasar un temporal a fijo ─────────────────────────────────────
+     Antes de pedir el ID se muestra cuánto lleva, que es lo que hace
+     falta para decidir. El historial no se mueve: todo lo suyo cuelga
+     de su id interno, no del número del reloj. */
+  async function hacerFijo(id){
+    const e = lista.find(x => x.id === id);
+    if (!e) return;
+
+    let resumen = null;
+    try{ resumen = await DB.empleados.resumenTemporal(id); }catch(err){}
+
+    const cuanto = resumen
+      ? `<table style="width:100%;margin:.4rem 0 1rem;font-size:12px">
+           <tr><td>Semanas pagadas</td>
+               <td class="num" style="font-weight:600">${resumen.semanas_pagadas ?? 0}</td></tr>
+           <tr><td>Días trabajados</td>
+               <td class="num" style="font-weight:600">${resumen.dias_trabajados ?? 0}</td></tr>
+           <tr><td>Desde</td><td class="num">${
+             resumen.primer_dia ? fmtFecha(resumen.primer_dia) : '—'}</td></tr>
+           <tr><td>Pagado hasta hoy</td>
+               <td class="num">${fmtMon(resumen.pagado_total || 0)}</td></tr>
+         </table>`
+      : '<p class="ayuda" style="margin-bottom:1rem">No se pudo leer cuánto lleva ' +
+        '(falta correr el query 21).</p>';
+
+    const libres = [];
+    const usados = new Set(lista.map(x => Number(x.codigo_reloj)).filter(Boolean));
+    for (let i = 1; i <= 120 && libres.length < 6; i++) if (!usados.has(i)) libres.push(i);
+
+    const { el, cerrar } = modal({ titulo: 'Hacer fijo a ' + e.nombre, ancho:'480px',
+      cuerpo: `
+        <p class="ayuda" style="margin-bottom:.6rem">Lo que lleva trabajando:</p>
+        ${cuanto}
+        <div class="fg"><label>ID del reloj que le vas a dar</label>
+          <input id="hf-cod" type="number" min="1" placeholder="por ejemplo ${libres[0] ?? 1}"></div>
+        <p class="ayuda" style="margin-top:.4rem">
+          Libres ahora mismo: ${libres.join(', ')}${libres.length === 6 ? '…' : ''}.
+          Dáselo también en el reloj con ese mismo número.
+        </p>
+        <div id="hf-msg" style="margin-top:.8rem"></div>
+        <div class="abar" style="justify-content:flex-end">
+          <button class="btn btn-s" id="hf-x">Cancelar</button>
+          <button class="btn btn-p" id="hf-ok">Hacerlo fijo</button>
+        </div>`});
+
+    el.querySelector('#hf-x').onclick = cerrar;
+    el.querySelector('#hf-ok').onclick = async () => {
+      const cod = Number(el.querySelector('#hf-cod').value);
+      const msg = el.querySelector('#hf-msg');
+      if (!cod || cod < 1){
+        msg.innerHTML = '<div class="alert alert-warn">Escribí el ID del reloj</div>';
+        return;
+      }
+      const btn = el.querySelector('#hf-ok');
+      btn.disabled = true; btn.textContent = 'Guardando…';
+      try{
+        const r = await DB.empleados.hacerFijo(id, cod);
+        if (r && r.ok === false){
+          msg.innerHTML = `<div class="alert alert-err">${esc(r.error)}</div>`;
+          btn.disabled = false; btn.textContent = 'Hacerlo fijo';
+          return;
+        }
+        cerrar();
+        toast(`${e.nombre.split(' ')[0]} quedó fijo con el ID ${cod}. ` +
+              'Su historial no se movió.', 'ok', 6000);
+        cargar();
+      }catch(err){
+        msg.innerHTML = `<div class="alert alert-err">${esc(err.message)}</div>`;
+        btn.disabled = false; btn.textContent = 'Hacerlo fijo';
       }
     };
   }
@@ -3193,7 +3338,9 @@ const Horario = (() => {
 
       return `<tr>
         <td style="font-size:12px">
-          <span style="color:var(--text3);font-family:'DM Mono',monospace">${e.codigo_reloj ?? '—'}</span>
+          <span style="color:var(--text3);font-family:'DM Mono',monospace">${
+            e.temporal ? '<span class="badge b-warn" title="Temporal: sus horas van a mano, no marca en el reloj">temp</span>'
+                       : (e.codigo_reloj ?? '—')}</span>
           <span style="font-weight:500;margin-left:6px">${esc(e.nombre.split(' ').slice(0,3).join(' '))}</span>
         </td>
         ${celdas}
