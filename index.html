@@ -1929,6 +1929,30 @@ const DB = (() => {
   };
 
   /* ── 10 % de salón ───────────────────────────────────────────── */
+  /* El camino viejo, solo como respaldo. No es atómico: si se corta
+     entre el borrado y la inserción, la semana queda vacía. */
+  async function guardarSalonPorPartes(semana, bolsa, nota, filas){
+    const { error: e0 } = await cli.from('semanas')
+      .upsert({ lunes: semana, estado: 'abierta' },
+              { onConflict:'lunes', ignoreDuplicates:true });
+    if (e0) throw e0;
+
+    const { error: e1 } = await cli.from('servicio10_semana')
+      .upsert({ semana, bolsa, nota: nota || null,
+                actualizado_en: new Date().toISOString() });
+    if (e1) throw e1;
+
+    const { error: e2 } = await cli.from('servicio10_detalle')
+      .delete().eq('semana', semana);
+    if (e2) throw e2;
+
+    if (filas.length){
+      const { error: e3 } = await cli.from('servicio10_detalle')
+        .insert(filas.map(f => ({ semana, ...f })));
+      if (e3) throw e3;
+    }
+  }
+
   const salon = {
     async deSemana(semana){
       const [cab, det] = await Promise.all([
@@ -1940,29 +1964,33 @@ const DB = (() => {
       return { cabecera: cab.data, detalle: det.data || [] };
     },
 
-    // La semana tiene que existir antes de poder colgarle el reparto
+    /* Guardar el reparto de la semana.
+
+       Va por una función de Postgres que hace todo en una sola
+       transacción. Antes eran cuatro llamadas sueltas, y la tercera
+       BORRABA el detalle de la semana: si la conexión se caía entre
+       esa y la inserción, la semana quedaba vacía y lo que había se
+       perdía. Con la función, o queda todo o no queda nada.
+
+       Si la función todavía no existe en la base (falta correr el
+       query 20), se usa el camino viejo para no dejar la app sin
+       guardar — pero avisando en la consola. */
     async guardar(semana, bolsa, nota, filas){
-      const { error: e0 } = await cli.from('semanas')
-        .upsert({ lunes: semana, estado: 'abierta' }, { onConflict:'lunes',
-                                                       ignoreDuplicates:true });
-      if (e0) throw e0;
+      const { error } = await cli.rpc('guardar_salon', {
+        p_semana: semana,
+        p_bolsa : bolsa,
+        p_nota  : nota || null,
+        p_filas : filas
+      });
+      if (!error) return;
 
-      const { error: e1 } = await cli.from('servicio10_semana')
-        .upsert({ semana, bolsa, nota: nota || null,
-                  actualizado_en: new Date().toISOString() });
-      if (e1) throw e1;
+      const faltaLaFuncion = /function .*guardar_salon|does not exist|PGRST202/i
+        .test(error.message || '') || error.code === 'PGRST202';
+      if (!faltaLaFuncion) throw error;
 
-      // Se reemplaza el detalle completo: quien salió de la lista
-      // tiene que desaparecer, no quedarse con el monto viejo.
-      const { error: e2 } = await cli.from('servicio10_detalle')
-        .delete().eq('semana', semana);
-      if (e2) throw e2;
-
-      if (filas.length){
-        const { error: e3 } = await cli.from('servicio10_detalle')
-          .insert(filas.map(f => ({ semana, ...f })));
-        if (e3) throw e3;
-      }
+      console.warn('[salón] guardar_salon no está en la base — corré el query 20. ' +
+                   'Mientras tanto se guarda por el camino viejo.');
+      await guardarSalonPorPartes(semana, bolsa, nota, filas);
     },
 
     /* ── El equipo fijo ──────────────────────────────────────────
@@ -3871,6 +3899,7 @@ const Planilla = (() => {
   let resultados = [];
   let acuerdosSemana = [];
   let sinHorario = false;
+  let semanaCargada = null;   // a qué semana pertenece lo que hay en memoria
 
   /* ── Cuando la semana no tiene horario ───────────────────────────
      Los de monto fijo cobran igual sin marcar, así que la tabla se
@@ -3926,6 +3955,17 @@ const Planilla = (() => {
     $('pl-semana').textContent = corto(lunes) + ' — ' + corto(masDias(lunes,6)) +
                                  ' · ' + lunes.getFullYear();
     $('pl-body').innerHTML = '<tr><td colspan="10" class="vacio">Calculando…</td></tr>';
+
+    // Se tira lo de la semana anterior ANTES de pedir lo nuevo. Si la
+    // carga falla a mitad de camino, en memoria no puede quedar la
+    // planilla de la semana pasada: guardarla o imprimirla con la fecha
+    // de esta semana movería la plata de una semana a otra.
+    resultados = [];
+    acuerdosSemana = [];
+    guardada = false;
+    sinHorario = false;
+    semanaCargada = null;
+    pintar();
     try{
       const desde = iso(lunes), hasta = iso(masDias(lunes,6));
       const [emps, jrs, fers, yaGuardada, vacs, incs, rebs, acs] = await Promise.all([
@@ -3967,6 +4007,7 @@ const Planilla = (() => {
 
       guardada = yaGuardada.length > 0;
       sinHorario = jrs.length === 0;
+      semanaCargada = desde;        // de qué semana es lo que hay en memoria
       pintar();
 
       // Sin horario, los únicos que aparecen son los de monto fijo, y
@@ -4296,7 +4337,18 @@ const Planilla = (() => {
   }
 
   /* ── Guardar ─────────────────────────────────────────────────── */
+  /* El seguro contra guardar o imprimir una semana con los datos de
+     otra. Si la carga falló, `semanaCargada` no coincide con la semana
+     en pantalla y no se deja seguir. */
+  function cuadraLaSemana(accion){
+    if (semanaCargada === iso(lunes)) return true;
+    toast(`No se puede ${accion}: lo que hay en pantalla no terminó de ` +
+          `cargar. Volvé a calcular la semana.`, 'err', 7000);
+    return false;
+  }
+
   async function guardar(){
+    if (!cuadraLaSemana('guardar')) return;
     if (!resultados.length){ toast('No hay nada que guardar', 'warn'); return; }
     const t = totales();
     const texto = guardada
@@ -4452,6 +4504,7 @@ const Planilla = (() => {
   }
 
   function comprobantes(soloCCSS){
+    if (!cuadraLaSemana('imprimir')) return;
     if (!resultados.length){ toast('Calculá la planilla primero', 'warn'); return; }
 
     const fin = masDias(lunes,6);
@@ -4857,6 +4910,24 @@ const Vacaciones = (() => {
                || (tipo !== 'cancelada'  && s && s.disponibles_disfrutar < dias);
     if (falta && !confirm('El saldo no alcanza. ¿Registrar de todas formas?')) return;
 
+    // Nada impide registrar dos veces las mismas vacaciones, y la
+    // cancelada se paga. Si las fechas se pisan con algo ya registrado
+    // de la misma persona, hay que confirmarlo.
+    const pisa = registros.filter(r =>
+      r.empleado_id === empId && r.fecha_inicio <= fin && r.fecha_fin >= ini);
+    if (pisa.length){
+      const detalle = pisa.map(r =>
+        `· ${r.tipo} del ${r.fecha_inicio} al ${r.fecha_fin}` +
+        (Number(r.monto) ? ' — ' + fmtMon(r.monto) : '')).join('\n');
+      const aviso =
+        `${emp.nombre} ya tiene vacaciones registradas en esas fechas:\n\n` +
+        detalle +
+        '\n\nSi son las mismas, registrarlas otra vez descuenta el saldo dos ' +
+        'veces y vuelve a pagar la parte cancelada.' +
+        '\n\n¿Registrar de todas formas?';
+      if (!confirm(aviso)) return;
+    }
+
     // grupo_id une las dos filas de un mismo acto
     const grupo = 'g' + Date.now();
     const semana = Planilla.semanaActual();
@@ -5211,6 +5282,25 @@ const Incapacidades = (() => {
     const pct = Number($('inc-pct').value) || 50;
     const c   = calcular(tipo, emp, u.pagar, pct);
     if (c.neto <= 0) return toast('El monto da ₡0 — revisá el salario del empleado', 'warn', 5000);
+
+    // Nada impide registrar dos veces la misma incapacidad, y eso se
+    // paga dos veces sin que nadie lo note. Si el rango se pisa con
+    // otro ya registrado de la misma persona, hay que confirmarlo.
+    const pisa = registros.filter(x =>
+      x.empleado_id === empId &&
+      x.fecha_inicio <= fin && x.fecha_fin >= ini);
+    if (pisa.length){
+      const detalle = pisa.map(x =>
+        `· ${ETIQUETA[x.tipo] || x.tipo} del ${x.fecha_inicio} al ${x.fecha_fin}` +
+        ` — ${fmtMon(x.monto_neto)}`).join('\n');
+      const aviso =
+        `${emp.nombre} ya tiene ${pisa.length === 1 ? 'una incapacidad registrada'
+          : pisa.length + ' incapacidades registradas'} en esas mismas fechas:\n\n` +
+        detalle +
+        '\n\nSi es la misma, registrarla otra vez se la paga dos veces.' +
+        '\n\n¿Registrar de todas formas?';
+      if (!confirm(aviso)) return;
+    }
 
     const mes = new Date(ini + 'T12:00:00')
       .toLocaleDateString('es-CR', { month:'long', year:'numeric' });
@@ -5963,6 +6053,7 @@ const Salon = (() => {
   let filas    = [];      // { empleado_id, rol, valores[7], monto_ajustado, titular }
   let nota     = '';
   let guardado = false;
+  let semanaCargada = null;   // a qué semana pertenece lo que hay en memoria
 
   function lunesDe(d){
     const x = new Date(d); x.setHours(12,0,0,0);
@@ -6012,7 +6103,18 @@ const Salon = (() => {
   async function cargar(){
     $('sal-semana').textContent = corto(lunes) + ' — ' + corto(masDias(lunes,6)) +
                                   ' · ' + lunes.getFullYear();
+    // Se limpia ANTES de pedir. Si la carga falla, no puede quedar la
+    // bolsa ni el reparto de la semana pasada: darle a Guardar los
+    // escribiría en la semana nueva. Se repinta de una para que los
+    // totales de arriba tampoco queden mostrando la semana vieja.
+    filas = [];
+    bolsa = [0,0,0,0,0,0,0];
+    nota = '';
+    guardado = false;
+    semanaCargada = null;
+    pintar();
     $('sal-body').innerHTML = '<tr><td colspan="12" class="vacio">Cargando…</td></tr>';
+
     try{
       const semana = iso(lunes);
       const [emps, guardada, equipo] = await Promise.all([
@@ -6041,6 +6143,7 @@ const Salon = (() => {
       // Semana nueva: se precarga a la gente del departamento de salón
       if (!filas.length) precargar();
 
+      semanaCargada = semana;     // de qué semana es lo que hay en memoria
       pintar();
     }catch(err){
       $('sal-body').innerHTML =
@@ -6076,6 +6179,54 @@ const Salon = (() => {
   }
 
   /* ── Pintado ─────────────────────────────────────────────────── */
+  /* Vuelve a calcular y actualiza SOLO los números, sin tocar los
+     campos de texto. Así el foco sobrevive y se puede tabular por toda
+     la cuadrícula. Lo que cambia de forma —agregar o quitar gente,
+     cambiar el modo de pago— sí llama a pintar(). */
+  function refrescarMontos(){
+    const t = calcular();
+
+    filas.forEach((f, i) => {
+      const c = $('sal-body').querySelector(`[data-calc="${i}"]`);
+      if (c) c.textContent = f.monto_calculado ? fmtMon(f.monto_calculado) : '—';
+      const fi = $('sal-body').querySelector(`[data-final="${i}"]`);
+      if (fi) fi.textContent = fmtMon(montoFinal(f));
+    });
+
+    // Las tarifas por día cambian con las horas de todos
+    $('sal-bolsa').querySelectorAll('.sal-tasa').forEach((caja, d) => {
+      caja.innerHTML = `${t[d].horas ? fmtMon(t[d].porHora) + ' /h' : '—'}
+        <span>${t[d].horas ? t[d].horas + ' h' : 'sin horas'}${
+          t[d].ayudantes ? ' · ayud. ' + fmtMon(t[d].ayudantes) : ''}</span>`;
+    });
+
+    pintarTotales();
+  }
+
+  /* Los totales de abajo y las métricas de arriba. */
+  function pintarTotales(){
+    const repartido  = filas.reduce((s,f) => s + montoFinal(f), 0);
+    const bolsaTotal = bolsa.reduce((s,b) => s + nz(b), 0);
+    const dif = bolsaTotal - repartido;
+
+    $('sal-foot').innerHTML = filas.length
+      ? `<tr style="border-top:2px solid var(--border2);font-weight:700">
+      <td colspan="9">TOTAL REPARTIDO</td>
+      <td class="num">${fmtMon(filas.reduce((s,f)=>s+nz(f.monto_calculado),0))}</td>
+      <td></td>
+      <td class="num" style="color:var(--accent)">${fmtMon(repartido)}</td>
+      <td></td></tr>` : '';
+
+    $('m-sal-bolsa').textContent = fmtMon(bolsaTotal);
+    $('m-sal-rep').textContent   = fmtMon(repartido);
+    $('m-sal-dif').textContent   = fmtMon(dif);
+    $('m-sal-dif').style.color   = Math.abs(dif) < 1 ? 'var(--accent)'
+                                 : dif < 0 ? 'var(--danger)' : 'var(--warn)';
+    $('m-sal-dif-sub').textContent = Math.abs(dif) < 1 ? 'cuadra exacto'
+      : dif > 0 ? 'queda sin repartir' : 'se repartió de más';
+    $('m-sal-gente').textContent = filas.length;
+  }
+
   function pintar(){
     const t = calcular();
 
@@ -6092,8 +6243,13 @@ const Salon = (() => {
         </div>
       </div>`).join('');
 
+    // Igual que las celdas de la gente: no se repinta, para no perder
+    // el foco al tabular entre los días de la bolsa.
     $('sal-bolsa').querySelectorAll('[data-bolsa]').forEach(inp => {
-      inp.onchange = () => { bolsa[Number(inp.dataset.bolsa)] = nz(inp.value); pintar(); };
+      inp.onchange = () => {
+        bolsa[Number(inp.dataset.bolsa)] = nz(inp.value);
+        refrescarMontos();
+      };
     });
 
     const orden = filas.slice().sort((a,b) =>
@@ -6120,35 +6276,18 @@ const Salon = (() => {
           <input type="number" step="${hrs?'0.5':'500'}" value="${v || ''}"
                  data-val="${idx}" data-dia="${d}" placeholder="${hrs?'h':'₡'}"
                  class="hora-inp" style="width:100%;text-align:right"></td>`).join('')}
-        <td class="num" style="color:var(--text3)">${f.monto_calculado ? fmtMon(f.monto_calculado) : '—'}</td>
+        <td class="num" data-calc="${idx}" style="color:var(--text3)">${
+          f.monto_calculado ? fmtMon(f.monto_calculado) : '—'}</td>
         <td style="padding:3px"><input type="number" step="500" data-aj="${idx}"
               value="${f.monto_ajustado}" placeholder="igual"
               class="hora-inp" style="width:100%;text-align:right"></td>
-        <td class="num" style="font-weight:600;color:var(--accent)">${fmtMon(montoFinal(f))}</td>
+        <td class="num" data-final="${idx}"
+            style="font-weight:600;color:var(--accent)">${fmtMon(montoFinal(f))}</td>
         <td><button class="btn btn-d btn-xs" data-quitar="${idx}">✕</button></td>
       </tr>`;
     }).join('') : '<tr><td colspan="12" class="vacio">Agregá a la gente de salón</td></tr>';
 
-    // Totales
-    const repartido = filas.reduce((s,f) => s + montoFinal(f), 0);
-    const bolsaTotal = bolsa.reduce((s,b) => s + nz(b), 0);
-    const dif = bolsaTotal - repartido;
-
-    $('sal-foot').innerHTML = filas.length ? `<tr style="border-top:2px solid var(--border2);font-weight:700">
-      <td colspan="9">TOTAL REPARTIDO</td>
-      <td class="num">${fmtMon(filas.reduce((s,f)=>s+nz(f.monto_calculado),0))}</td>
-      <td></td>
-      <td class="num" style="color:var(--accent)">${fmtMon(repartido)}</td>
-      <td></td></tr>` : '';
-
-    $('m-sal-bolsa').textContent = fmtMon(bolsaTotal);
-    $('m-sal-rep').textContent   = fmtMon(repartido);
-    $('m-sal-dif').textContent   = fmtMon(dif);
-    $('m-sal-dif').style.color   = Math.abs(dif) < 1 ? 'var(--accent)'
-                                 : dif < 0 ? 'var(--danger)' : 'var(--warn)';
-    $('m-sal-dif-sub').textContent = Math.abs(dif) < 1 ? 'cuadra exacto'
-      : dif > 0 ? 'queda sin repartir' : 'se repartió de más';
-    $('m-sal-gente').textContent = filas.length;
+    pintarTotales();
 
     $('sal-estado').innerHTML = guardado
       ? '<span class="badge b-ok">guardada</span>'
@@ -6156,17 +6295,23 @@ const Salon = (() => {
     $('sal-nota').value = nota;
 
     // Eventos
+    //
+    // Escribir en una celda NO vuelve a dibujar la tabla. Repintarla
+    // reemplaza los campos, y el navegador pierde el foco que venía
+    // moviendo: tabular de una celda a la siguiente dejaba el cursor
+    // en la nada y había que hacer clic en cada una de las 56.
+    // Se actualizan solo los números calculados.
     $('sal-body').querySelectorAll('[data-val]').forEach(inp => {
       inp.onchange = () => {
         filas[Number(inp.dataset.val)].valores[Number(inp.dataset.dia)] = nz(inp.value);
-        pintar();
+        refrescarMontos();
       };
     });
     $('sal-body').querySelectorAll('[data-aj]').forEach(inp => {
       inp.onchange = () => {
         filas[Number(inp.dataset.aj)].monto_ajustado =
           inp.value === '' ? '' : nz(inp.value);
-        pintar();
+        refrescarMontos();
       };
     });
     // El rol es solo una etiqueta: no toca el cálculo ni los valores.
@@ -6394,7 +6539,16 @@ const Salon = (() => {
   }
 
   /* ── Guardar ─────────────────────────────────────────────────── */
+  /* El seguro contra escribir una semana con el reparto de otra. */
+  function cuadraLaSemana(accion){
+    if (semanaCargada === iso(lunes)) return true;
+    toast(`No se puede ${accion}: lo que hay en pantalla no terminó de ` +
+          `cargar. Volvé a abrir la semana.`, 'err', 7000);
+    return false;
+  }
+
   async function guardar(){
+    if (!cuadraLaSemana('guardar')) return;
     if (!filas.length) return toast('No hay a quién repartirle', 'warn');
     calcular();
     const btn = $('sal-guardar');
@@ -6490,6 +6644,7 @@ const Salon = (() => {
   }
 
   function comprobantes(){
+    if (!cuadraLaSemana('imprimir')) return;
     if (!filas.length) return toast('No hay nada que imprimir', 'warn');
     const t = calcular();
     const fin = masDias(lunes,6);
