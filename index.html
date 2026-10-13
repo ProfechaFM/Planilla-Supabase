@@ -6220,6 +6220,14 @@ const Salon = (() => {
   // sus horas entran al reparto como cualquier otra.
   const porHoras = f => (f.modo || (f.rol === 'ayudante' ? 'monto' : 'horas')) === 'horas';
 
+  /* El orden, uno solo para la pantalla y para los comprobantes:
+     primero los saloneros, después los ayudantes, y dentro de cada
+     grupo por ID. Tenerlo en un solo lugar evita que la tabla y el
+     papel terminen ordenados distinto. */
+  const porRolYId = (a, b) =>
+    (a.rol === b.rol ? 0 : a.rol === 'salonero' ? -1 : 1) ||
+    (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999);
+
   function tasas(){
     return bolsa.map((b, d) => {
       const horas = filas.filter(porHoras)
@@ -6399,9 +6407,7 @@ const Salon = (() => {
       };
     });
 
-    const orden = filas.slice().sort((a,b) =>
-      (a.rol === b.rol ? 0 : a.rol === 'salonero' ? -1 : 1) ||
-      (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999));
+    const orden = filas.slice().sort(porRolYId);
 
     $('sal-body').innerHTML = orden.length ? orden.map(f => {
       const idx = filas.indexOf(f);
@@ -6752,7 +6758,7 @@ const Salon = (() => {
      va: lo que hace entendible el monto es la bolsa de la izquierda —
      lo que entró cada día— y el reparto es un cálculo interno que no
      necesita ir en el papel que la persona firma. */
-  function unComprobanteSalon(f, t, periodo){
+  function unComprobanteSalon(f, t, periodo, n, total){
     const emp = App.estado.cfg.empresa || {};
     const hrs = porHoras(f);
 
@@ -6766,6 +6772,8 @@ const Salon = (() => {
               emp.nombre_comercial ? ' — ' + esc(emp.nombre_comercial) : ''}</div>
             <div class="tit">10 % Departamento de Salón</div>
             <div class="per">${periodo}</div>
+          </div>
+          <div class="folio">${n} <span>de ${total}</span>
           </div>
         </div>
 
@@ -6799,7 +6807,7 @@ const Salon = (() => {
 
     const lista = filas
       .filter(f => montoFinal(f) > 0)
-      .sort((a,b) => (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999));
+      .sort(porRolYId);
     if (!lista.length) return toast('Todavía no hay montos que repartir', 'warn');
 
     const total = lista.reduce((s,f) => s + montoFinal(f), 0);
@@ -6839,6 +6847,12 @@ const Salon = (() => {
   .cab{ display:flex; gap:8px; align-items:flex-start;
         border-bottom:1px solid #e6e3dd; padding-bottom:5px }
   .cab .logo{ width:30px; height:30px; object-fit:contain; flex-shrink:0 }
+  /* El número de comprobante: sirve para repartirlos sin saltarse a
+     nadie. Los saloneros llevan los primeros. */
+  .folio{ margin-left:auto; text-align:right; font-family:'DM Mono',ui-monospace,monospace;
+          font-size:15px; font-weight:700; color:#2d5a3d; line-height:1 }
+  .folio span{ display:block; font-size:7.5px; font-weight:400; color:#999;
+               letter-spacing:.3px; margin-top:2px }
   .emp{ font-size:9px; font-weight:700; text-transform:uppercase;
         letter-spacing:.3px; line-height:1.25 }
   .tit{ font-size:11px; font-weight:600; color:#2d5a3d; line-height:1.25 }
@@ -6887,7 +6901,8 @@ const Salon = (() => {
     lista.length === 1 ? 'persona' : 'personas'} · ${fmtMon(total)}</span>
   <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
 </div>
-<div class="hoja">${lista.map(f => unComprobanteSalon(f, t, periodo)).join('')}</div>
+<div class="hoja">${lista.map((f,i) =>
+  unComprobanteSalon(f, t, periodo, i + 1, lista.length)).join('')}</div>
 <script>
 (function(){
   var pasos = ['d1','d2','d3'];
