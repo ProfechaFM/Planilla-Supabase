@@ -6,7 +6,7 @@
   No se edita a mano: se edita el proyecto por partes y se vuelve
   a armar, o el cambio se pierde al rearmar.
 
-  Armado el 2026-10-13
+  Armado el 2026-10-19
 -->
 <html lang="es">
 <head>
@@ -773,6 +773,11 @@ tbody tr:hover td{background:var(--bg)}
           </div>
           <div class="fg" style="margin-bottom:.7rem"><label>Nota</label>
             <input id="inc-nota" placeholder="Opcional"></div>
+          <div class="fg">
+            <label for="inc-semana">Se paga en la planilla de</label>
+            <select id="inc-semana"></select>
+            <span class="ayuda" id="inc-semana-ayuda"></span>
+          </div>
           <div class="resumen" id="inc-preview" style="display:none"></div>
           <div class="abar">
             <button class="btn btn-p" id="inc-guardar"
@@ -1364,6 +1369,25 @@ tbody tr:hover td{background:var(--bg)}
         </p>
         <div class="abar">
           <button class="btn btn-p" id="cfg-guardar-salon">Guardar salón</button>
+        </div>
+      </div>
+
+      <!-- Omitir comprobantes -->
+      <div class="card">
+        <div class="card-title">Quién no lleva comprobante</div>
+        <p class="ayuda">
+          Marcá a quien no firma comprobante —jefatura, o gente que cobra por
+          otra vía—. No les sale comprobante impreso, ni en planilla ni en salón.
+          <strong>Siguen cobrando igual</strong> y siguen contando en todos los
+          totales: esto cambia solo lo que se imprime.
+        </p>
+        <p class="ayuda" id="cfg-omitir-cuenta" style="margin:.5rem 0 .2rem"></p>
+        <div class="opciones" id="cfg-omitir-lista"
+             style="max-height:22rem;overflow:auto">
+          <div class="vacio">Cargando…</div>
+        </div>
+        <div class="abar">
+          <button class="btn btn-p" id="cfg-guardar-omitir">Guardar la lista</button>
         </div>
       </div>
 
@@ -2188,7 +2212,7 @@ const App = (() => {
 
   /* La fecha de armado. armar.js la reemplaza al generar el archivo
      único, para saber de un vistazo qué versión está subida. */
-  const VERSION = '2026-10-13';
+  const VERSION = '2026-10-19';
 
   /* ── Utilidades ──────────────────────────────────────────────── */
   const $  = id => document.getElementById(id);
@@ -2324,15 +2348,18 @@ const App = (() => {
     // empresa, así que vacaciones, liquidaciones y salón trabajaban con
     // los valores de respaldo del código y nunca con los de la base.
     try{
-      const [nom, emp, vac, liq, sal] = await Promise.all([
+      const [nom, emp, vac, liq, sal, cmp] = await Promise.all([
         DB.config('nomina'), DB.config('empresa'), DB.config('vacaciones'),
-        DB.config('liquidacion'), DB.config('salon')
+        DB.config('liquidacion'), DB.config('salon'), DB.config('comprobantes')
       ]);
-      estado.cfg.nomina      = nom || {};
-      estado.cfg.empresa     = emp || {};
-      estado.cfg.vacaciones  = vac || {};
-      estado.cfg.liquidacion = liq || {};
-      estado.cfg.salon       = sal || {};
+      estado.cfg.nomina       = nom || {};
+      estado.cfg.empresa      = emp || {};
+      estado.cfg.vacaciones   = vac || {};
+      estado.cfg.liquidacion  = liq || {};
+      estado.cfg.salon        = sal || {};
+      // Quién no lleva comprobante impreso. Hace falta desde el arranque:
+      // se imprime desde Planilla y desde Salón, sin pasar por Configuración.
+      estado.cfg.comprobantes = cmp || {};
     }catch(err){
       console.warn('[config]', err.message);
     }
@@ -4784,13 +4811,27 @@ const Planilla = (() => {
     const fin = masDias(lunes,6);
     const periodo = `${corto(lunes)} ${lunes.getFullYear()} al ${corto(fin)} ${fin.getFullYear()}`;
 
+    // Quien está marcado en Configuración no lleva comprobante impreso
+    // (jefatura, gente que cobra por otra vía). Sigue en la planilla y
+    // en los totales: lo único que cambia es que no se imprime.
+    const omitir = (App.estado.cfg.comprobantes || {}).omitir || [];
+
     const lista = resultados
       .filter(r => r.neto > 0 && (!soloCCSS || r.empleado.ccss))
+      .filter(r => !omitir.includes(r.empleado.id))
       .sort((a,b) => (a.empleado.codigo_reloj ?? 9999) - (b.empleado.codigo_reloj ?? 9999));
 
     if (!lista.length){
       toast(soloCCSS ? 'Nadie asegurado cobra esta semana' : 'No hay nada que imprimir', 'warn');
       return;
+    }
+
+    // Se avisa cuántos quedaron fuera, para que no parezca un olvido.
+    const fuera = resultados.filter(r =>
+      r.neto > 0 && (!soloCCSS || r.empleado.ccss) && omitir.includes(r.empleado.id));
+    if (fuera.length){
+      toast(`${fuera.length} sin comprobante por configuración: ` +
+            fuera.map(r => r.empleado.nombre.split(' ')[0]).join(', '), 'warn', 6000);
     }
 
     const titulo = soloCCSS ? 'Planilla semanal — personal asegurado CCSS'
@@ -4826,40 +4867,41 @@ const Planilla = (() => {
   .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.8cm }
   .tira{ width:14.4cm; margin:0 auto }
 
-  /* Cuatro por página carta. La altura es fija para que el corte
-     caiga siempre en el mismo lugar y las tijeras no adivinen:
+  /* TRES por página carta. Antes eran cuatro y la letra quedaba muy
+     apretada para leerla de un vistazo. La altura es fija para que el
+     corte caiga siempre en el mismo lugar y las tijeras no adivinen:
      27.94 cm de hoja − 1.6 de márgenes = 26.34 útiles;
-     4 × 6.4 + 3 × 0.22 de aire = 26.26.                          */
+     3 × 8.5 + 2 × 0.3 de aire = 26.1, con 0.24 de sobra.          */
   .comp{ position:relative; border:1px solid #ccc; border-radius:4px;
-         padding:7px 11px; margin-bottom:.22cm; height:6.4cm;
+         padding:10px 14px; margin-bottom:.3cm; height:8.5cm;
          overflow:hidden; page-break-inside:avoid;
          display:flex; flex-direction:column }
-  .comp .logo{ position:absolute; top:7px; right:11px;
-               width:34px; height:34px; object-fit:contain }
-  .comp-empresa{ font-size:8.5px; font-weight:700; text-transform:uppercase;
+  .comp .logo{ position:absolute; top:10px; right:14px;
+               width:42px; height:42px; object-fit:contain }
+  .comp-empresa{ font-size:10px; font-weight:700; text-transform:uppercase;
                  letter-spacing:.3px; line-height:1.2 }
-  .comp-per{ font-size:8px; color:#666; margin-top:0; line-height:1.2 }
-  .comp-nombre{ font-size:12.5px; font-weight:700; margin-top:4px;
-                padding-right:42px; line-height:1.15 }
-  .comp-meta{ font-size:8.5px; color:#777; margin-bottom:4px; line-height:1.2 }
-  .det{ width:100%; border-collapse:collapse; font-size:9.5px; line-height:1.3 }
-  .det td{ padding:1.2px 0; border-bottom:1px solid #f2f1ee }
+  .comp-per{ font-size:9.5px; color:#666; margin-top:0; line-height:1.2 }
+  .comp-nombre{ font-size:15px; font-weight:700; margin-top:6px;
+                padding-right:50px; line-height:1.15 }
+  .comp-meta{ font-size:10px; color:#777; margin-bottom:6px; line-height:1.2 }
+  .det{ width:100%; border-collapse:collapse; font-size:11px; line-height:1.4 }
+  .det td{ padding:2px 0; border-bottom:1px solid #f2f1ee }
   .det td.m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace;
              white-space:nowrap }
-  .det .tar{ color:#8a8a8a; font-size:8.5px }
+  .det .tar{ color:#8a8a8a; font-size:9.5px }
   .det .resalta td{ color:#2d5a3d }
   .det .neg td{ color:#a8392b }
   .det .sub td{ font-weight:700; border-top:1px solid #999; border-bottom:none;
                 padding-top:2.5px }
-  .det .tot td{ font-weight:700; font-size:11.5px; border-top:1px solid #333;
+  .det .tot td{ font-weight:700; font-size:14px; border-top:1px solid #333;
                 border-bottom:none; padding-top:2.5px }
-  .nota{ margin-top:3px; padding:2px 7px; border-left:3px solid #2d5a3d;
-         background:#f4f7f4; font-size:8.5px }
-  .reparto{ margin-top:2px; font-size:8.5px; color:#555 }
-  .firmas{ display:flex; gap:14px; margin-top:auto; padding-top:5px;
-           font-size:8.5px; color:#555 }
+  .nota{ margin-top:5px; padding:3px 8px; border-left:3px solid #2d5a3d;
+         background:#f4f7f4; font-size:10px }
+  .reparto{ margin-top:4px; font-size:10px; color:#555 }
+  .firmas{ display:flex; gap:18px; margin-top:auto; padding-top:8px;
+           font-size:10px; color:#555 }
   .firmas span{ flex:1 }
-  .firmas i{ display:inline-block; min-width:70px; border-bottom:1px solid #999;
+  .firmas i{ display:inline-block; min-width:90px; border-bottom:1px solid #999;
              font-style:normal }
 
   /* ── Si a alguien no le cabe el detalle ──────────────────────────
@@ -4867,17 +4909,17 @@ const Planilla = (() => {
      y rebajos a la vez: doce líneas en vez de ocho. Antes que cortar
      un dato del comprobante, se aprieta la letra por pasos; y si ni
      así entra, el recuadro crece. Nunca se pierde una línea.      */
-  .comp.d1 .det{ font-size:9px; line-height:1.2 }
-  .comp.d1 .det td{ padding:.6px 0 }
-  .comp.d1 .det .tar{ font-size:8px }
-  .comp.d2 .det{ font-size:8.5px; line-height:1.15 }
-  .comp.d2 .det .tot td{ font-size:10.5px }
-  .comp.d2 .comp-nombre{ font-size:11.5px }
-  .comp.d2 .nota,.comp.d2 .reparto{ font-size:8px }
-  .comp.d3 .det{ font-size:8px }
-  .comp.d3 .det .tot td{ font-size:9.5px }
-  .comp.d3 .firmas{ font-size:7.5px; padding-top:3px }
-  .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
+  .comp.d1 .det{ font-size:10px; line-height:1.28 }
+  .comp.d1 .det td{ padding:1.2px 0 }
+  .comp.d1 .det .tar{ font-size:9px }
+  .comp.d2 .det{ font-size:9.2px; line-height:1.2 }
+  .comp.d2 .det .tot td{ font-size:12.5px }
+  .comp.d2 .comp-nombre{ font-size:13.5px }
+  .comp.d2 .nota,.comp.d2 .reparto{ font-size:9px }
+  .comp.d3 .det{ font-size:8.6px }
+  .comp.d3 .det .tot td{ font-size:11px }
+  .comp.d3 .firmas{ font-size:8.5px; padding-top:5px }
+  .comp.crece{ height:auto; min-height:8.5cm; overflow:visible }
 
   /* ── Barra, solo en pantalla ── */
   .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
@@ -4903,7 +4945,7 @@ ${portada(titulo, periodo, lista.length)}
   lista.map(r => unComprobante(r, periodo)).join('')}</div></div>
 <script>
 /* Ajusta cada comprobante antes de imprimir: si el detalle no entra en
-   los 6.4 cm, aprieta la letra por pasos; si ni así entra, deja crecer
+   los 8.5 cm, aprieta la letra por pasos; si ni así entra, deja crecer
    el recuadro. Un comprobante nunca sale con una línea cortada.     */
 (function(){
   var pasos = ['d1','d2','d3'];
@@ -5417,6 +5459,7 @@ const Incapacidades = (() => {
         DB.incapacidades.listar(),
         DB.empleados.listar()
       ]);
+      await cargarSemanas();   // llena «se paga en la planilla de»
       const ops = empleados.filter(e => e.codigo_reloj !== 999)
         .map(e => `<option value="${e.id}">${e.codigo_reloj ?? '—'} · ${esc(e.nombre)}</option>`)
         .join('');
@@ -5499,6 +5542,77 @@ const Incapacidades = (() => {
     const d = new Date(ini + 'T12:00:00');
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return d.toISOString().split('T')[0];
+  }
+
+  /* ── En qué planilla se paga ──────────────────────────────────────
+     Normalmente es la semana en que arrancó la incapacidad. Pero si se
+     anota tarde, esa semana ya se pagó y el monto nunca llega a manos
+     de la persona: queda registrado y adeudado para siempre.
+
+     Por eso se puede mover a una semana posterior. El registro guarda
+     las fechas reales de la incapacidad —eso no se toca, es lo legal—
+     y aparte la semana en que se va a cobrar.                       */
+  let semanas = [];          // [{ lunes, estado }]
+  let semanaTocada = false;  // ¿el usuario la movió a propósito?
+
+  async function cargarSemanas(){
+    try{
+      semanas = await DB.planilla.todasLasSemanas();
+    }catch(err){
+      semanas = [];
+      console.warn('[incapacidades] no se pudieron leer las semanas:', err.message);
+    }
+    pintarSemanas();
+  }
+
+  // Se vuelve a pintar cuando cambia la fecha de inicio, porque la
+  // opción recomendada depende de ella.
+  function pintarSemanas(){
+    const sel = $('inc-semana');
+    if (!sel) return;
+    const sugerida = semanaDeInicio();
+    const elegida  = sel.value;
+
+    // La semana sugerida puede no existir todavía en la tabla: se
+    // agrega igual para poder elegirla.
+    const lista = semanas.slice();
+    if (sugerida && !lista.some(s => s.lunes === sugerida)){
+      lista.push({ lunes: sugerida, estado: 'abierta' });
+    }
+    lista.sort((a, b) => b.lunes.localeCompare(a.lunes));
+
+    sel.innerHTML = lista.map(s => {
+      const pagada = s.estado === 'calculada';
+      const marca  = s.lunes === sugerida ? ' · la que corresponde' : '';
+      return `<option value="${s.lunes}" ${s.lunes === sugerida ? 'data-sug="1"' : ''}>${
+        fmtFecha(s.lunes)}${pagada ? ' — ya pagada' : ''}${marca}</option>`;
+    }).join('');
+
+    // Solo se conserva la elección si el usuario la movió a propósito.
+    // Sin esa distinción, el valor que quedó por defecto se confundía
+    // con una elección y la lista ya no seguía a la fecha de inicio.
+    sel.value = (semanaTocada && elegida && lista.some(s => s.lunes === elegida))
+      ? elegida : sugerida;
+    avisoSemana();
+  }
+
+  function avisoSemana(){
+    const sel = $('inc-semana'), ayuda = $('inc-semana-ayuda');
+    if (!sel || !ayuda) return;
+    const sugerida = semanaDeInicio();
+    const s = semanas.find(x => x.lunes === sel.value);
+
+    if (sel.value === sugerida){
+      ayuda.innerHTML = s && s.estado === 'calculada'
+        ? '<strong style="color:var(--warn)">Esa planilla ya se pagó.</strong> ' +
+          'Si la incapacidad no entró en ese pago, elegí una semana posterior ' +
+          'para que se le cobre a la persona y no quede adeudada.'
+        : 'Es la semana en que arrancó la incapacidad.';
+    } else {
+      ayuda.innerHTML = `Se va a pagar en la planilla del <strong>${
+        fmtFecha(sel.value)}</strong>, no en la de la incapacidad. ` +
+        'Las fechas del registro no cambian.';
+    }
   }
 
   function previsualizar(){
@@ -5595,12 +5709,19 @@ const Incapacidades = (() => {
         // La fecha más vieja manda: si la incapacidad arranca un
         // domingo y termina el jueves siguiente, se paga en la semana
         // del domingo, no en la que esté abierta en pantalla.
-        semana_calculo: semanaDeInicio(),
+        // La semana la elige el usuario. Por defecto es la del inicio,
+        // pero si esa planilla ya se pagó puede mandarla a una
+        // posterior para que la persona sí lo cobre.
+        semana_calculo: $('inc-semana').value || semanaDeInicio(),
         nota        : $('inc-nota').value.trim() || null
       });
+      const sem = $('inc-semana').value || semanaDeInicio();
       toast(`${ETIQUETA[tipo]} registrada — ${fmtMon(c.neto)} neto · ` +
-            `planilla del ${fmtFecha(semanaDeInicio())}`, 'ok', 5000);
+            `planilla del ${fmtFecha(sem)}` +
+            (sem !== semanaDeInicio() ? ' (movida a propósito)' : ''), 'ok', 5000);
       ['inc-caso','inc-ini','inc-fin','inc-nota'].forEach(id => $(id).value = '');
+      semanaTocada = false;        // el próximo registro vuelve a lo normal
+      pintarSemanas();
       $('inc-preview').style.display = 'none';
       $('inc-unidades').innerHTML = '—';
       await cargar();
@@ -5624,6 +5745,13 @@ const Incapacidades = (() => {
     $('inc-tipo').onchange = ajustarCampos;
     ['inc-emp','inc-ini','inc-fin','inc-pct'].forEach(id =>
       $(id).addEventListener('change', previsualizar));
+    // Cambiar la fecha de inicio cambia cuál semana es la que
+    // corresponde, así que la lista se vuelve a pintar.
+    $('inc-ini').addEventListener('change', pintarSemanas);
+    $('inc-semana').addEventListener('change', () => {
+      semanaTocada = true;   // de aquí en adelante manda su elección
+      avisoSemana();
+    });
     $('inc-guardar').onclick = guardar;
     $('inc-filtro').onchange = pintar;
   }
@@ -6932,10 +7060,22 @@ const Salon = (() => {
     const fin = masDias(lunes,6);
     const periodo = `${corto(lunes)} al ${corto(fin)} de ${fin.getFullYear()}`;
 
+    // Los marcados en Configuración no llevan comprobante impreso.
+    // Siguen en el reparto y en los totales.
+    const omitir = (App.estado.cfg.comprobantes || {}).omitir || [];
+
     const lista = filas
       .filter(f => montoFinal(f) > 0)
+      .filter(f => !omitir.includes(f.empleado_id))
       .sort(porRolYId);
     if (!lista.length) return toast('Todavía no hay montos que repartir', 'warn');
+
+    const fuera = filas.filter(f =>
+      montoFinal(f) > 0 && omitir.includes(f.empleado_id));
+    if (fuera.length){
+      toast(`${fuera.length} sin comprobante por configuración: ` +
+            fuera.map(f => (f.nombre || '').split(' ')[0]).join(', '), 'warn', 6000);
+    }
 
     const total = lista.reduce((s,f) => s + montoFinal(f), 0);
     const emp = App.estado.cfg.empresa || {};
@@ -6948,21 +7088,27 @@ const Salon = (() => {
   body{ font:11px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
         color:#1a1917; margin:0; padding:1rem; background:#e9e7e2 }
   .hoja{ width:21.6cm; margin:0 auto; background:#fff; padding:.8cm }
+  /* Angostos y centrados, igual que los de planilla: queda aire a los
+     lados para doblar y archivar, y el monto no queda a veinte
+     centimetros del nombre. */
+  .tira{ width:14.4cm; margin:0 auto }
 
-  /* Cuatro por página carta, igual que los de planilla. La altura es
+  /* TRES por página carta, igual que los de planilla. La altura es
      fija para que el corte caiga siempre en el mismo lugar:
      27.94 cm de hoja − 1.6 de márgenes = 26.34 útiles;
-     4 × 6.4 + 3 × 0.22 de aire = 26.26.                           */
-  .comp{ display:grid; grid-template-columns:5.1cm 1fr; gap:0;
+     3 × 8.5 + 2 × 0.3 de aire = 26.1.
+     La columna de la bolsa baja a 4.6 cm: en 14.4 de ancho total, el
+     lado de la persona necesita el espacio más que el panel. */
+  .comp{ display:grid; grid-template-columns:4.6cm 1fr; gap:0;
          border:1px solid #c9c6c0; border-radius:5px; overflow:hidden;
-         height:6.4cm; margin-bottom:.22cm; page-break-inside:avoid }
+         height:8.5cm; margin-bottom:.3cm; page-break-inside:avoid }
 
   /* ── Lo que entró cada día ── */
   .bolsa{ background:#f6f5f2; border-right:1px solid #c9c6c0; padding:8px 10px }
   .bolsa-tit{ font-size:9px; font-weight:700; text-transform:uppercase;
               letter-spacing:.5px; color:#2d5a3d; line-height:1.2 }
   .bolsa-per{ font-size:8px; color:#777; margin-bottom:5px }
-  .bolsa table{ width:100%; border-collapse:collapse; font-size:9.5px }
+  .bolsa table{ width:100%; border-collapse:collapse; font-size:10px }
   .bolsa td{ padding:1.5px 0; border-bottom:1px solid #e6e3dd }
   .bolsa .dia{ color:#555 }
   .bolsa .m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace }
@@ -6986,18 +7132,18 @@ const Salon = (() => {
   .per{ font-size:8.5px; color:#777; line-height:1.25 }
   .quien{ display:flex; align-items:baseline; gap:9px; margin-top:4px;
           flex-wrap:wrap }
-  .nombre{ font-size:12.5px; font-weight:700; line-height:1.2 }
-  .meta{ font-size:8.5px; color:#777 }
+  .nombre{ font-size:14.5px; font-weight:700; line-height:1.2 }
+  .meta{ font-size:9.5px; color:#777 }
 
   .pie{ margin-top:auto }
   .neto{ padding-top:5px; display:flex; align-items:baseline;
          justify-content:space-between; gap:10px; border-top:2px solid #2d5a3d }
-  .neto span{ font-size:9px; font-weight:600; text-transform:uppercase;
+  .neto span{ font-size:10px; font-weight:600; text-transform:uppercase;
               letter-spacing:.5px }
-  .neto strong{ font-size:15px; font-family:'DM Mono',ui-monospace,monospace }
+  .neto strong{ font-size:18px; font-family:'DM Mono',ui-monospace,monospace }
   .firmas{ display:flex; gap:18px; margin-top:8px }
   .firmas div{ flex:1 }
-  .firmas span{ display:block; font-size:8px; color:#888; margin-bottom:9px }
+  .firmas span{ display:block; font-size:9.5px; color:#888; margin-bottom:9px }
   .firmas i{ display:block; border-bottom:1px solid #555; height:1px }
 
   /* Si a alguien no le cabe —un nombre muy largo, la bolsa de los
@@ -7005,11 +7151,11 @@ const Salon = (() => {
      ni así entra, el recuadro crece.                              */
   .comp.d1 .bolsa table{ font-size:9px }
   .comp.d1 .bolsa td{ padding:1px 0 }
-  .comp.d1 .nombre{ font-size:11.5px }
+  .comp.d1 .nombre{ font-size:13px }
   .comp.d2 .bolsa table{ font-size:8.5px }
-  .comp.d2 .neto strong{ font-size:13.5px }
+  .comp.d2 .neto strong{ font-size:16px }
   .comp.d3 .firmas{ margin-top:5px }
-  .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
+  .comp.crece{ height:auto; min-height:8.5cm; overflow:visible }
 
   .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
           padding:.7rem 1.1rem; border-radius:6px; display:flex; gap:1rem;
@@ -7028,8 +7174,8 @@ const Salon = (() => {
     lista.length === 1 ? 'persona' : 'personas'} · ${fmtMon(total)}</span>
   <button onclick="window.print()" style="margin-left:auto">Imprimir o guardar en PDF</button>
 </div>
-<div class="hoja">${lista.map((f,i) =>
-  unComprobanteSalon(f, t, periodo, i + 1, lista.length)).join('')}</div>
+<div class="hoja"><div class="tira">${lista.map((f,i) =>
+  unComprobanteSalon(f, t, periodo, i + 1, lista.length)).join('')}</div></div>
 <script>
 (function(){
   var pasos = ['d1','d2','d3'];
@@ -8202,6 +8348,71 @@ const Config = (() => {
     }, { titulo:'10 % de salón' });
   }
 
+  /* ── Quién no lleva comprobante ──────────────────────────────────
+     Hay gente que no firma comprobante —jefatura, familia, quien
+     cobra por otra vía—. Marcarlos acá los saca de la impresión, en
+     planilla y en salón, pero NO los saca de la planilla: siguen
+     cobrando igual y siguen contando en los totales. Esto es
+     solamente qué se imprime.                                      */
+  let omitidos = [];        // ids de empleado
+
+  function pintarOmitidos(){
+    const caja = $('cfg-omitir-lista');
+    if (!caja) return;
+    const gente = (App.estado.empleados || [])
+      .filter(e => e.activo)
+      .sort((a,b) => (a.codigo_reloj ?? 9999) - (b.codigo_reloj ?? 9999));
+
+    if (!gente.length){
+      caja.innerHTML = '<div class="vacio">No hay empleados activos</div>';
+      return;
+    }
+    caja.innerHTML = gente.map(e => `
+      <label class="opcion">
+        <input type="checkbox" data-omitir="${e.id}"
+               ${omitidos.includes(e.id) ? 'checked' : ''}>
+        <span>
+          <span class="op-tit">
+            <span style="color:var(--text3);font-family:'DM Mono',monospace">${
+              e.temporal ? 'temp' : (e.codigo_reloj ?? '—')}</span>
+            ${esc(e.nombre)}
+          </span>
+          <span class="op-txt">${esc(e.puesto || 'sin puesto')}</span>
+        </span>
+      </label>`).join('');
+
+    caja.querySelectorAll('[data-omitir]').forEach(ch => {
+      ch.onchange = () => {
+        const id = ch.dataset.omitir;
+        omitidos = ch.checked ? omitidos.concat([id])
+                              : omitidos.filter(x => x !== id);
+        $('cfg-omitir-cuenta').textContent = resumenOmitidos();
+      };
+    });
+    $('cfg-omitir-cuenta').textContent = resumenOmitidos();
+  }
+
+  function resumenOmitidos(){
+    if (!omitidos.length) return 'Ahora mismo se imprime el comprobante de todos.';
+    const nombres = (App.estado.empleados || [])
+      .filter(e => omitidos.includes(e.id))
+      .map(e => e.nombre.split(' ').slice(0,2).join(' '));
+    return `${omitidos.length} sin comprobante: ${nombres.join(', ')}`;
+  }
+
+  function guardarOmitidos(){
+    const antes = (App.estado.cfg.comprobantes || {}).omitir || [];
+    // Se comparan como conjuntos: reordenar la lista no es un cambio.
+    const igual = antes.length === omitidos.length &&
+                  antes.every(id => omitidos.includes(id));
+    if (igual) return toast('No hay nada que cambiar', 'warn');
+    return guardarGrupo('comprobantes', { omitir: omitidos.slice() }, {
+      titulo: 'Quién no lleva comprobante',
+      nota  : 'Solo cambia qué se imprime. Estas personas siguen ' +
+              'cobrando igual y siguen contando en los totales de la planilla.'
+    });
+  }
+
   /* ── Probar la conexión ──────────────────────────────────────── */
   async function probar(){
     const dest = $('cfg-prueba');
@@ -8225,19 +8436,24 @@ const Config = (() => {
     // Puede haber otra pestaña abierta, o un query corrido en Supabase
     // después de que la app arrancó: se relee antes de pintar.
     try{
-      const [emp, nom, vac, liq, sal] = await Promise.all([
+      const [emp, nom, vac, liq, sal, cmp, gente] = await Promise.all([
         DB.config('empresa'), DB.config('nomina'), DB.config('vacaciones'),
-        DB.config('liquidacion'), DB.config('salon')
+        DB.config('liquidacion'), DB.config('salon'), DB.config('comprobantes'),
+        DB.empleados.listar()
       ]);
-      App.estado.cfg.empresa     = emp || {};
-      App.estado.cfg.nomina      = nom || {};
-      App.estado.cfg.vacaciones  = vac || {};
-      App.estado.cfg.liquidacion = liq || {};
-      App.estado.cfg.salon       = sal || {};
+      App.estado.cfg.empresa      = emp || {};
+      App.estado.cfg.nomina       = nom || {};
+      App.estado.cfg.vacaciones   = vac || {};
+      App.estado.cfg.liquidacion  = liq || {};
+      App.estado.cfg.salon        = sal || {};
+      App.estado.cfg.comprobantes = cmp || {};
+      App.estado.empleados        = gente || [];
+      omitidos = (App.estado.cfg.comprobantes.omitir || []).slice();
     }catch(err){
       toast('No se pudo leer la configuración: ' + err.message, 'err', 6000);
     }
     pintar();
+    pintarOmitidos();
   }
 
   function registrarModulo(){
@@ -8251,6 +8467,7 @@ const Config = (() => {
     $('cfg-guardar-vac').onclick    = guardarVacaciones;
     $('cfg-guardar-liq').onclick    = guardarLiquidacion;
     $('cfg-guardar-salon').onclick  = guardarSalon;
+    $('cfg-guardar-omitir').onclick = guardarOmitidos;
     $('cfg-probar').onclick         = probar;
   }
 
