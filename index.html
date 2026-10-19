@@ -7093,22 +7093,24 @@ const Salon = (() => {
      centimetros del nombre. */
   .tira{ width:14.4cm; margin:0 auto }
 
-  /* TRES por página carta, igual que los de planilla. La altura es
-     fija para que el corte caiga siempre en el mismo lugar:
+  /* CUATRO por página carta. Estos comprobantes llevan solo el neto,
+     así que no necesitan el alto de los de planilla —esos van de a
+     tres— y de a cuatro rinde mejor el papel. La altura es fija para
+     que el corte caiga siempre en el mismo lugar:
      27.94 cm de hoja − 1.6 de márgenes = 26.34 útiles;
-     3 × 8.5 + 2 × 0.3 de aire = 26.1.
-     La columna de la bolsa baja a 4.6 cm: en 14.4 de ancho total, el
-     lado de la persona necesita el espacio más que el panel. */
+     4 × 6.4 + 3 × 0.22 de aire = 26.26.
+     El ancho sí se queda angosto (14.4 cm), y por eso la columna de
+     la bolsa va en 4.6: el lado de la persona necesita el espacio. */
   .comp{ display:grid; grid-template-columns:4.6cm 1fr; gap:0;
          border:1px solid #c9c6c0; border-radius:5px; overflow:hidden;
-         height:8.5cm; margin-bottom:.3cm; page-break-inside:avoid }
+         height:6.4cm; margin-bottom:.22cm; page-break-inside:avoid }
 
   /* ── Lo que entró cada día ── */
   .bolsa{ background:#f6f5f2; border-right:1px solid #c9c6c0; padding:8px 10px }
   .bolsa-tit{ font-size:9px; font-weight:700; text-transform:uppercase;
               letter-spacing:.5px; color:#2d5a3d; line-height:1.2 }
   .bolsa-per{ font-size:8px; color:#777; margin-bottom:5px }
-  .bolsa table{ width:100%; border-collapse:collapse; font-size:10px }
+  .bolsa table{ width:100%; border-collapse:collapse; font-size:9.5px }
   .bolsa td{ padding:1.5px 0; border-bottom:1px solid #e6e3dd }
   .bolsa .dia{ color:#555 }
   .bolsa .m{ text-align:right; font-family:'DM Mono',ui-monospace,monospace }
@@ -7132,18 +7134,18 @@ const Salon = (() => {
   .per{ font-size:8.5px; color:#777; line-height:1.25 }
   .quien{ display:flex; align-items:baseline; gap:9px; margin-top:4px;
           flex-wrap:wrap }
-  .nombre{ font-size:14.5px; font-weight:700; line-height:1.2 }
-  .meta{ font-size:9.5px; color:#777 }
+  .nombre{ font-size:12.5px; font-weight:700; line-height:1.2 }
+  .meta{ font-size:8.5px; color:#777 }
 
   .pie{ margin-top:auto }
   .neto{ padding-top:5px; display:flex; align-items:baseline;
          justify-content:space-between; gap:10px; border-top:2px solid #2d5a3d }
-  .neto span{ font-size:10px; font-weight:600; text-transform:uppercase;
+  .neto span{ font-size:9px; font-weight:600; text-transform:uppercase;
               letter-spacing:.5px }
-  .neto strong{ font-size:18px; font-family:'DM Mono',ui-monospace,monospace }
+  .neto strong{ font-size:15px; font-family:'DM Mono',ui-monospace,monospace }
   .firmas{ display:flex; gap:18px; margin-top:8px }
   .firmas div{ flex:1 }
-  .firmas span{ display:block; font-size:9.5px; color:#888; margin-bottom:9px }
+  .firmas span{ display:block; font-size:8px; color:#888; margin-bottom:9px }
   .firmas i{ display:block; border-bottom:1px solid #555; height:1px }
 
   /* Si a alguien no le cabe —un nombre muy largo, la bolsa de los
@@ -7151,11 +7153,11 @@ const Salon = (() => {
      ni así entra, el recuadro crece.                              */
   .comp.d1 .bolsa table{ font-size:9px }
   .comp.d1 .bolsa td{ padding:1px 0 }
-  .comp.d1 .nombre{ font-size:13px }
+  .comp.d1 .nombre{ font-size:11.5px }
   .comp.d2 .bolsa table{ font-size:8.5px }
-  .comp.d2 .neto strong{ font-size:16px }
+  .comp.d2 .neto strong{ font-size:13.5px }
   .comp.d3 .firmas{ margin-top:5px }
-  .comp.crece{ height:auto; min-height:8.5cm; overflow:visible }
+  .comp.crece{ height:auto; min-height:6.4cm; overflow:visible }
 
   .barra{ width:21.6cm; margin:0 auto 1rem; background:#2d5a3d; color:#fff;
           padding:.7rem 1.1rem; border-radius:6px; display:flex; gap:1rem;
